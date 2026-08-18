@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-image:
+    radial-gradient(circle at 15% 10%, rgba(242, 184, 75, 0.06), transparent 40%),
+    radial-gradient(circle at 85% 90%, rgba(111, 184, 232, 0.06), transparent 45%);
+  min-height: 100vh;
+}
+
+.receipt-torn {
+  height: 14px;
+  background:
+    linear-gradient(135deg, #14202B 50%, transparent 50%) 0 0 / 16px 16px repeat-x,
+    linear-gradient(-135deg, #14202B 50%, transparent 50%) 0 0 / 16px 16px repeat-x;
+  background-color: #F5F1E8;
+}
+.receipt-torn.flip { transform: rotate(180deg); }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(245, 241, 232, 0.15); border-radius: 4px; }
