@@ -1,2 +1,22 @@
-# Local Netlify folder
-.netlify
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (never commit real API credentials)
+.env
+.env.local
+.env.*.local
+
+# Netlify CLI local state
+.netlify/
+
+# OS/editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
