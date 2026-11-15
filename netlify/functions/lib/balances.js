@@ -24,11 +24,16 @@ function lastCutoffDate(cutoffDay, today = new Date()) {
   return new Date(py, pm, prevCutoff);
 }
 
+// Local YYYY-MM-DD, comparable as a string against transaction dates.
+const isoDate = d => d.toLocaleDateString('en-CA');
+
 // Savings balance = every transaction that lands on or leaves this account.
-function computeSavingsBalance(accountId, transactions) {
+// Future-dated transactions (e.g. scheduled installments) don't count yet.
+function computeSavingsBalance(accountId, transactions, today = new Date()) {
+  const todayStr = isoDate(today);
   let bal = 0;
   for (const t of transactions) {
-    if (t.voided) continue;
+    if (t.voided || t.date > todayStr) continue;
     if (t.to_account_id === accountId) bal += Number(t.amount);
     if (t.from_account_id === accountId) bal -= Number(t.amount);
   }
@@ -41,11 +46,18 @@ function computeSavingsBalance(accountId, transactions) {
 // Payments (transfers TO the card) pay down `current` first, then `outstanding`.
 function computeCreditCard(account, transactions, today = new Date()) {
   const cutoff = lastCutoffDate(account.cutoff_day, today);
-  let billed = 0, unbilled = 0, paid = 0;
+  const todayStr = isoDate(today);
+  const nextMonth = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 1)).slice(0, 7);
+  let billed = 0, unbilled = 0, paid = 0, future = 0, dueNextMonth = 0;
 
   for (const t of transactions) {
     if (t.voided) continue;
     if (t.type === 'expense' && t.from_account_id === account.id) {
+      if (t.date > todayStr) { // scheduled ahead (installments): tracked apart from today's debt
+        future += Number(t.amount);
+        if (t.date.startsWith(nextMonth)) dueNextMonth += Number(t.amount);
+        continue;
+      }
       const d = new Date(t.date + 'T00:00:00');
       if (d <= cutoff) billed += Number(t.amount);
       else unbilled += Number(t.amount);
@@ -68,21 +80,27 @@ function computeCreditCard(account, transactions, today = new Date()) {
     current: round2(current),
     outstanding: round2(outstanding),
     total: round2(current + outstanding),
+    future: round2(future),             // all scheduled charges still to come
+    dueNextMonth: round2(dueNextMonth), // the part of that landing next calendar month
     cutoffDate: cutoff
   };
 }
 
 function computeNetWorth(accounts, transactions, today = new Date()) {
-  let savings = 0, cardDebt = 0, loanDebt = 0;
+  let savings = 0, cardDebt = 0, loanDebt = 0, futureDebt = 0;
   for (const a of accounts) {
     if (a.archived) continue;
-    if (a.type === 'savings') savings += computeSavingsBalance(a.id, transactions);
-    else if (a.type === 'creditcard') cardDebt += computeCreditCard(a, transactions, today).total;
-    else if (a.type === 'loan') loanDebt += Number(a.balance) || 0;
+    if (a.type === 'savings') savings += computeSavingsBalance(a.id, transactions, today);
+    else if (a.type === 'creditcard') {
+      const c = computeCreditCard(a, transactions, today);
+      cardDebt += c.total;
+      futureDebt += c.future;
+    } else if (a.type === 'loan') loanDebt += Number(a.balance) || 0;
   }
   return {
     savings: round2(savings),
     cardDebt: round2(cardDebt),
+    futureDebt: round2(futureDebt), // not part of netWorth: scheduled card charges still to come
     loanDebt: round2(loanDebt),
     netWorth: round2(savings - cardDebt - loanDebt)
   };

@@ -17,7 +17,7 @@ Google Sheets is the actual database (via a service account) — there is no oth
 ## Commands
 
 - `npm run dev` — Vite dev server only (UI only; API calls fail with nothing to answer them)
-- `node dev/offline.mjs` — Vite + the real `api.js` handler with `sheets.js` swapped for an in-memory store (no credentials needed, data resets on restart, passcode `demo`, logo upload disabled)
+- `npm run local` — Vite + the real function handlers without the Netlify CLI (`dev/local.mjs`, reads `.env`; template in `.env.example`). With `SHEET_ID` set it uses the real Google Sheet; without it, `sheets.js` is swapped for an in-memory store (data resets on restart, passcode `demo`). Logo upload works only when the Cloudinary vars are set.
 - `netlify dev` — runs the React app and Netlify Functions together (needs Netlify CLI + a local `.env` — see Environment below); use this to exercise real app behavior end-to-end
 - `npm run build` — Vite production build
 - `npm test` — runs `test/balances.test.js` directly with `node` (plain `assert`-based, no test framework/runner). To run it: `node test/balances.test.js`
@@ -38,11 +38,12 @@ Required (in Netlify site config or a local `.env` for `netlify dev`):
   - Loan balance is the one *stored* (not derived) field — manually set, and auto-decremented when a `transfer` targets a loan account (see `api.js`'s post-append step in `handleTransactions`).
   - Credit card debt splits into `current` (billed as of the last cutoff date, due next) vs `outstanding` (spent since cutoff, not yet billed). Payments reduce `current` first, then spill into `outstanding`. `lastCutoffDate()` clamps to the actual last day of short months (e.g. cutoff day 31 in February).
 
-**Frontend (`src/`)** — plain React (no router, no state library):
-- `App.jsx` owns all top-level state (accounts, transactions, netWorth, active page, open modals) and passes it down as `pageProps`; page switching is `page === 'x' && <Component/>` rather than a router.
-- `lib/api.js` — thin fetch wrapper around the two Netlify functions; every call returns `data` and throws on `!data.success`.
-- `lib/format.js` — `peso()` currency formatter and the fixed `CATEGORIES` list for expenses (edit this array to change categories — it's not stored in the sheet).
-- Styling is Tailwind, configured in `tailwind.config.js`.
+**Frontend (`src/`)** — React + TypeScript (no router, no state library), UI built from shadcn/ui components (`src/components/ui/`, Tailwind v3, added with `shadcn@2.3.0` — the last CLI release for Tailwind v3):
+- `App.tsx` owns all top-level state (accounts, transactions, net worth per view, active page, open modals); pages are shadcn `Tabs`. The Both/Person 1/Person 2 switch is purely client-side — `GET accounts` returns `netWorthByView` for all three views at once, so switching never refetches.
+- `lib/api.ts` — typed fetch wrapper (and the `Account`/`Transaction`/… types) around the two Netlify functions; every call returns `data` and throws `ApiError` on `!data.success`.
+- `lib/format.ts` — `peso()` currency formatter and the fixed `CATEGORIES` list for expenses (edit this array to change categories — it's not stored in the sheet).
+- Styling is Tailwind; colors are shadcn tokens (`primary`, `destructive`, `muted-foreground`, …) whose values (the Tally palette) live as CSS variables in `src/index.css`.
+- `npm run typecheck` runs `tsc`. The backend (`netlify/functions/`) stays plain JavaScript.
 
 ## Data model notes
 

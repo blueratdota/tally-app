@@ -48,6 +48,17 @@ result = computeCreditCard(card, paidTxs, today);
 assert.strictEqual(result.current, 0);
 assert.strictEqual(result.outstanding, 30); // 50 - 20 spillover
 
+// --- future-dated charges (installments) stay out of today's debt, shown as `future` ---
+const futureTxs = [...cardTxs,
+  { type: 'expense', amount: 40, from_account_id: 'cc1', date: '2026-02-10', voided: false },  // next month
+  { type: 'expense', amount: 60, from_account_id: 'cc1', date: '2026-04-10', voided: false }]; // later
+result = computeCreditCard(card, futureTxs, today);
+assert.strictEqual(result.total, 150);
+assert.strictEqual(result.future, 100);
+assert.strictEqual(result.dueNextMonth, 40);
+assert.strictEqual(computeSavingsBalance('sav1', [...savingsTxs,
+  { type: 'expense', amount: 500, from_account_id: 'sav1', date: '2026-12-01', voided: false }], today), 800);
+
 // --- net worth combines all three account types ---
 const accounts = [
   { id: 'sav1', type: 'savings', archived: false },

@@ -19,4 +19,4 @@ Thumbs.db
 .idea/
 
 # Logs
-npm-debug.log*
+npm-debug.log*g

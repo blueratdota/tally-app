@@ -1,0 +1,33 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tally-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "local"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "tally-demo",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["SHEET_ID=", "APP_PASSCODE=demo", "CLOUDINARY_CLOUD_NAME=", "node", "dev/local.mjs"],
+      "port": 5173
+    },
+    {
+      "name": "tally-seed",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "SHEET_ID=",
+        "APP_PASSCODE=demo",
+        "SEED_FILE=/private/tmp/claude-501/-Users-jrbg1999--claude-spares-spare-Vd18mp/0695a307-10f2-4099-a514-b92d5d4b6c06/scratchpad/seed.json",
+        "node",
+        "--env-file-if-exists=.env",
+        "dev/local.mjs"
+      ],
+      "port": 5173
+    }
+  ]
+}

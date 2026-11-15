@@ -19,7 +19,11 @@ async function getSheetsClient() {
     privateKey,
     ['https://www.googleapis.com/auth/spreadsheets']
   );
-  await auth.authorize();
+  try {
+    await auth.authorize();
+  } catch (err) {
+    throw new Error('Google sign-in failed. Check GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY. (' + err.message + ')');
+  }
   cachedClient = google.sheets({ version: 'v4', auth });
   return cachedClient;
 }
@@ -40,9 +44,16 @@ function objectToRow(obj, cols) {
   return cols.map(c => (obj[c] === undefined || obj[c] === null ? '' : obj[c]));
 }
 
-// Ensures both tabs exist with a header row. Safe to call every time —
-// it's a couple of cheap reads, not a heavy migration step.
-async function ensureSheetsExist() {
+// Ensures both tabs exist with a header row. Runs once per process: callers
+// share one promise, so parallel reads on a brand-new sheet don't both try
+// to create the tabs. Retries on the next call if it failed.
+// ponytail: separate cold-started function instances could still race on the very first run.
+let ensured = null;
+function ensureSheetsExist() {
+  return (ensured ??= createMissingTabs().catch(err => { ensured = null; throw err; }));
+}
+
+async function createMissingTabs() {
   const sheets = await getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
   const existingTabs = meta.data.sheets.map(s => s.properties.title);
@@ -118,6 +129,16 @@ async function appendTransaction(tx) {
   });
 }
 
+// One API call for many rows (used by the Money Manager import; per-row appends would hit Sheets' write quota).
+async function appendTransactions(txs) {
+  await ensureSheetsExist();
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2`, valueInputOption: 'USER_ENTERED',
+    requestBody: { values: txs.map(t => objectToRow(t, TX_COLS)) }
+  });
+}
+
 async function voidTransaction(id) {
   const sheets = await getSheetsClient();
   const txs = await listTransactions();
@@ -132,6 +153,6 @@ async function voidTransaction(id) {
 
 module.exports = {
   listAccounts, appendAccount, updateAccount,
-  listTransactions, appendTransaction, voidTransaction,
+  listTransactions, appendTransaction, appendTransactions, voidTransaction,
   ACCOUNTS_COLS, TX_COLS
 };

@@ -33,11 +33,14 @@ async function handleAccounts(event) {
       if (a.type === 'creditcard') return { ...a, ...computeCreditCard(a, transactions) };
       return a; // loan: balance field is already the stored, manually-maintained value
     });
-    const netWorth = computeNetWorth(live, transactions);
+    // Every view at once (all / p1 / p2 = that person's accounts plus shared), so the
+    // client can switch person without another round trip to Sheets.
+    const netWorthByView = { all: computeNetWorth(live, transactions) };
+    for (const p of PEOPLE) netWorthByView[p] = computeNetWorth(live.filter(a => a.owner === p || a.owner === 'shared'), transactions);
     const month = /^\d{4}-\d{2}$/.test(event.queryStringParameters?.month || '')
       ? event.queryStringParameters.month : new Date().toISOString().slice(0, 7);
     const spending = monthlySpending(transactions, month);
-    return json(200, { success: true, accounts: enriched, netWorth, spending, month });
+    return json(200, { success: true, accounts: enriched, netWorthByView, spending, month });
   }
 
   if (event.httpMethod === 'POST') {
@@ -47,6 +50,12 @@ async function handleAccounts(event) {
       if (!body.id) return json(400, { success: false, error: 'Missing id' });
       if (body.patch?.owner !== undefined && !OWNERS.includes(body.patch.owner)) {
         return json(400, { success: false, error: 'Owner must be p1, p2 or shared' });
+      }
+      for (const k of ['cutoff_day', 'due_day']) {
+        const v = body.patch?.[k];
+        if (v !== undefined && !(Number.isInteger(Number(v)) && v >= 1 && v <= 31)) {
+          return json(400, { success: false, error: 'Cutoff and due day must be between 1 and 31' });
+        }
       }
       const updated = await sheetsDb.updateAccount(body.id, body.patch || {});
       return json(200, { success: true, account: updated });
