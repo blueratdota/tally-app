@@ -88,7 +88,27 @@ function computeNetWorth(accounts, transactions, today = new Date()) {
   };
 }
 
+// Expenses in one month ('YYYY-MM'), totalled per person and per category.
+function monthlySpending(transactions, month) {
+  const out = { total: 0, p1: { total: 0, categories: {} }, p2: { total: 0, categories: {} } };
+  for (const t of transactions) {
+    if (t.voided || t.type !== 'expense' || !String(t.date).startsWith(month)) continue;
+    const p = out[t.person];
+    const amt = Number(t.amount);
+    out.total += amt;
+    if (!p) continue; // ponytail: rows without a person count only toward the total
+    p.total += amt;
+    const cat = t.category || 'Other';
+    p.categories[cat] = round2((p.categories[cat] || 0) + amt);
+  }
+  out.total = round2(out.total);
+  out.p1.total = round2(out.p1.total);
+  out.p2.total = round2(out.p2.total);
+  return out;
+}
+
 module.exports = {
+  monthlySpending,
   round2,
   lastCutoffDate,
   computeSavingsBalance,

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { api } from '../lib/api.js';
-import { CATEGORIES } from '../lib/format.js';
+import { CATEGORIES, PEOPLE, localDate } from '../lib/format.js';
+
+const LAST_PERSON = 'tally-person';
+const lastPerson = () => { try { return localStorage.getItem(LAST_PERSON) || ''; } catch { return ''; } };
 
 function accountOptions(list, showGroup) {
   if (!list.length) return <option value="">No accounts yet — add one first</option>;
@@ -11,7 +14,8 @@ function accountOptions(list, showGroup) {
 
 export default function TxModal({ accounts, onClose, onSaved, showError }) {
   const [type, setType] = useState('income');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localDate());
+  const [person, setPerson] = useState(lastPerson());
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -30,7 +34,9 @@ export default function TxModal({ accounts, onClose, onSaved, showError }) {
     e.preventDefault();
     setError('');
 
-    const payload = { type, date, amount: parseFloat(amount), description: description.trim() };
+    if (!person) { setError('Choose who this is for.'); return; }
+    try { localStorage.setItem(LAST_PERSON, person); } catch {}
+    const payload = { type, date, person, amount: parseFloat(amount), description: description.trim() };
     if (type === 'income') {
       payload.to_account_id = toAccount;
     } else if (type === 'expense') {
@@ -56,28 +62,40 @@ export default function TxModal({ accounts, onClose, onSaved, showError }) {
     }
   }
 
-  const inputCls = "w-full bg-raised border border-white/10 text-paper px-3 py-2.5 rounded-lg text-sm outline-none focus:border-gold";
-  const labelCls = "block text-[11px] uppercase tracking-wide text-muted mb-1.5 font-mono";
+  const inputCls = "w-full bg-ground border border-line text-ink px-3 py-2.5 rounded-lg text-sm outline-none focus:border-blue";
+  const labelCls = "block text-sm text-muted mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-[440px] p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-ink/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-surface border border-line rounded-lg w-full max-w-[440px] p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-[19px] m-0">Add money movement</h2>
-          <span onClick={onClose} className="cursor-pointer text-muted text-xl">×</span>
+          <h2 className="font-display text-xl font-semibold">Record transaction</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-muted text-2xl leading-none">×</button>
         </div>
 
         <div className="flex gap-1.5 mb-[18px]">
           {['income', 'expense', 'transfer'].map(t => (
             <button key={t} type="button" onClick={() => setType(t)}
               className={'flex-1 py-2.5 rounded-lg text-[13px] font-semibold border transition ' +
-                (type === t ? 'bg-gold text-surface border-gold' : 'bg-raised text-muted border-white/10')}>
+                (type === t ? 'bg-blue text-white border-blue' : 'bg-ground text-muted border-line')}>
               {t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <fieldset>
+            <legend className={labelCls}>Who</legend>
+            <div className="flex gap-1.5">
+              {Object.entries(PEOPLE).map(([id, name]) => (
+                <button key={id} type="button" onClick={() => setPerson(id)} aria-pressed={person === id}
+                  className={'flex-1 py-2 rounded-lg text-sm font-medium border transition ' +
+                    (person === id ? 'bg-ink text-white border-ink' : 'bg-surface text-muted border-line')}>
+                  {name}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <div><label className={labelCls}>Date</label><input type="date" required value={date} onChange={e => setDate(e.target.value)} className={inputCls} /></div>
           <div><label className={labelCls}>Amount (₱)</label><input type="number" step="0.01" min="0.01" required placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} className={inputCls} /></div>
           <div><label className={labelCls}>Description</label><input type="text" required placeholder="e.g. Salary, Grocery run, Card payment" value={description} onChange={e => setDescription(e.target.value)} className={inputCls} /></div>
@@ -120,9 +138,9 @@ export default function TxModal({ accounts, onClose, onSaved, showError }) {
             </>
           )}
 
-          {error && <div className="text-coral text-xs mt-1">{error}</div>}
+          {error && <div className="text-red text-xs mt-1">{error}</div>}
 
-          <button type="submit" disabled={saving} className="w-full bg-gold text-surface font-semibold text-sm py-2.5 rounded-lg mt-1 disabled:opacity-60 hover:bg-[#f7c866] active:scale-[0.98] transition">
+          <button type="submit" disabled={saving} className="w-full bg-blue text-white font-semibold text-sm py-2.5 rounded-lg mt-1 disabled:opacity-60 hover:bg-[#002a82] active:scale-[0.98] transition">
             {saving ? 'Saving…' : 'Save'}
           </button>
         </form>

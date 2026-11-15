@@ -15,9 +15,9 @@ export default function Toast({ toast }) {
   return (
     <div
       className={
-        'fixed bottom-6 left-1/2 -translate-x-1/2 px-[18px] py-3 rounded-lg text-[13px] border z-[60] transition-all ' +
+        'fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-3 rounded-md text-sm border z-[60] transition-all text-white ' +
         (visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none') +
-        ' ' + (toast.isError ? 'border-coral bg-raised' : 'border-white/10 bg-raised')
+        ' ' + (toast.isError ? 'border-red bg-red' : 'border-ink bg-ink')
       }
     >
       {toast.msg}

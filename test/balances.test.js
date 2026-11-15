@@ -3,8 +3,10 @@ const {
   lastCutoffDate,
   computeSavingsBalance,
   computeCreditCard,
-  computeNetWorth
+  computeNetWorth,
+  monthlySpending
 } = require('../netlify/functions/lib/balances');
+const { passcodeOk } = require('../netlify/functions/lib/passcode');
 
 // --- lastCutoffDate: month-rollover and short-month clamping ---
 let d = lastCutoffDate(15, new Date(2026, 0, 20)); // Jan 20, cutoff 15 -> Jan 15
@@ -60,5 +62,25 @@ assert.strictEqual(nw.loanDebt, 500000);
 assert.strictEqual(nw.netWorth, round(800 - 150 - 500000));
 
 function round(n) { return Math.round(n * 100) / 100; }
+
+// --- monthly spending per person: only expenses, only that month, voided skipped ---
+const sp = monthlySpending([
+  { type: 'expense', amount: 100, person: 'p1', category: 'Dining', date: '2026-11-02' },
+  { type: 'expense', amount: 50.5, person: 'p1', category: 'Dining', date: '2026-11-20' },
+  { type: 'expense', amount: 30, person: 'p2', category: '', date: '2026-11-03' },
+  { type: 'expense', amount: 999, person: 'p2', date: '2026-10-31' },            // other month
+  { type: 'expense', amount: 999, person: 'p1', date: '2026-11-05', voided: true },
+  { type: 'income', amount: 999, person: 'p1', date: '2026-11-05' }              // not an expense
+], '2026-11');
+assert.strictEqual(sp.total, 180.5);
+assert.strictEqual(sp.p1.total, 150.5);
+assert.strictEqual(sp.p1.categories.Dining, 150.5);
+assert.strictEqual(sp.p2.categories.Other, 30);
+
+// --- passcode: exact match only, fails closed when unset ---
+assert.strictEqual(passcodeOk({ headers: { 'x-tally-passcode': 'abc' } }, 'abc'), true);
+assert.strictEqual(passcodeOk({ headers: { 'x-tally-passcode': 'abcd' } }, 'abc'), false);
+assert.strictEqual(passcodeOk({ headers: {} }, 'abc'), false);
+assert.strictEqual(passcodeOk({ headers: { 'x-tally-passcode': '' } }, ''), false);
 
 console.log('All balance checks passed.');

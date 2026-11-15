@@ -1,49 +1,90 @@
 import React from 'react';
-import { peso } from '../lib/format.js';
+import { peso, PEOPLE } from '../lib/format.js';
 
-function SummaryCard({ title, colorClass, list, lineFn }) {
+// Days until the card's next due day (clamped to short months).
+function daysUntilDue(dueDay) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const at = (y, m) => new Date(y, m, Math.min(dueDay, new Date(y, m + 1, 0).getDate()));
+  let due = at(today.getFullYear(), today.getMonth());
+  if (due < today) due = at(today.getFullYear(), today.getMonth() + 1);
+  return Math.round((due - today) / 864e5);
+}
+
+const dueText = d => (d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`);
+
+function SumLine({ label, amount, sign, tone }) {
   return (
-    <div className="bg-surface border border-white/10 rounded-2xl p-5">
-      <h3 className="font-display text-[15px] font-semibold mb-3.5 flex items-center gap-2">
-        <span className={'w-2 h-2 rounded-full inline-block ' + colorClass} />
-        {title}
-      </h3>
-      {list.length ? (
-        list.slice(0, 4).map(a => (
-          <div key={a.id} className="text-[13px] text-muted mb-1.5 font-mono">{lineFn(a)}</div>
-        ))
-      ) : (
-        <div className="text-[13px] text-muted font-mono">Nothing yet</div>
-      )}
+    <div className="flex items-baseline justify-between py-2 border-b border-line">
+      <span className="text-muted text-[15px]">{sign} {label}</span>
+      <span className={'font-display text-xl font-semibold ' + tone}>{peso(amount)}</span>
     </div>
   );
 }
 
-export default function Dashboard({ netWorth, byType }) {
-  const [whole, cents] = peso(netWorth.netWorth).replace('₱', '').split('.');
+function PersonSpending({ name, data }) {
+  const top = Object.entries(data.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return (
+    <div className="bg-surface border border-line rounded-md p-4">
+      <div className="font-medium">{name}</div>
+      <div className="font-display text-2xl font-semibold mb-2">{peso(data.total)}</div>
+      {top.length
+        ? <ul className="text-sm text-muted space-y-0.5">{top.map(([c, v]) => <li key={c} className="flex justify-between gap-2"><span>{c}</span><span>{peso(v)}</span></li>)}</ul>
+        : <p className="text-sm text-muted">No expenses yet</p>}
+    </div>
+  );
+}
+
+export default function Dashboard({ netWorth, spending, byType, setPage }) {
+  const cards = byType('creditcard')
+    .map(a => ({ ...a, days: daysUntilDue(a.due_day) }))
+    .sort((a, b) => a.days - b.days);
+  const empty = !netWorth.savings && !netWorth.cardDebt && !netWorth.loanDebt;
 
   return (
-    <div>
-      <div className="relative overflow-hidden bg-gradient-to-br from-raised to-surface border border-white/10 rounded-[20px] p-8 pb-7 mb-5">
-        <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-[radial-gradient(circle,rgba(242,184,75,0.16),transparent_70%)]" />
-        <div className="relative">
-          <div className="font-mono text-xs tracking-widest uppercase text-mint mb-1.5">Net worth right now</div>
-          <div className="font-display font-semibold leading-none tracking-tight text-[clamp(36px,6vw,56px)]">
-            ₱{whole}<span className="text-muted text-[0.5em]">.{cents || '00'}</span>
-          </div>
-          <div className="flex gap-6 flex-wrap mt-4 font-mono text-[13px]">
-            <div className="text-muted">Savings<b className="block text-mint text-[15px] mt-0.5 font-semibold">{peso(netWorth.savings)}</b></div>
-            <div className="text-muted">Credit card debt<b className="block text-coral text-[15px] mt-0.5 font-semibold">{peso(netWorth.cardDebt)}</b></div>
-            <div className="text-muted">Loan debt<b className="block text-coral text-[15px] mt-0.5 font-semibold">{peso(netWorth.loanDebt)}</b></div>
-          </div>
+    <div className="max-w-xl">
+      <section className="mb-10">
+        <SumLine sign="" label="Savings" amount={netWorth.savings} tone="text-blue" />
+        <SumLine sign="−" label="Credit card debt" amount={netWorth.cardDebt} tone="text-red" />
+        <SumLine sign="−" label="Loans" amount={netWorth.loanDebt} tone="text-red" />
+        <div className="double-rule flex items-baseline justify-between pt-4 pb-3">
+          <span className="font-semibold">Net worth</span>
+          <span className="font-display font-bold tracking-tight text-[clamp(36px,9vw,52px)] leading-none">{peso(netWorth.netWorth)}</span>
         </div>
-      </div>
+        {empty && <p className="text-muted text-sm mt-4">Nothing tracked yet. Add a savings account to start your total.</p>}
+      </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-[18px]">
-        <SummaryCard title="Credit Cards" colorClass="bg-coral" list={byType('creditcard')} lineFn={a => `${a.name}: ${peso(a.current)} due`} />
-        <SummaryCard title="Loans" colorClass="bg-violet" list={byType('loan')} lineFn={a => `${a.name}: ${peso(a.balance)}`} />
-        <SummaryCard title="Savings" colorClass="bg-mint" list={byType('savings')} lineFn={a => `${a.name}: ${peso(a.balance)}`} />
-      </div>
+      {spending && (
+        <section className="mb-10">
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="font-display text-lg font-semibold">Spent this month</h2>
+            <span className="text-sm text-muted">Together {peso(spending.total)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <PersonSpending name={PEOPLE.p1} data={spending.p1} />
+            <PersonSpending name={PEOPLE.p2} data={spending.p2} />
+          </div>
+          <button onClick={() => setPage('transactions')} className="mt-3 text-sm text-blue font-medium hover:underline">See each transaction</button>
+        </section>
+      )}
+
+      {cards.length > 0 && (
+        <section>
+          <h2 className="font-display text-lg font-semibold mb-2">Coming due</h2>
+          <ul className="bg-surface border border-line rounded-md divide-y divide-line">
+            {cards.map(a => (
+              <li key={a.id} className="flex items-baseline justify-between px-4 py-3">
+                <span>
+                  <span className="font-medium">{a.name}</span>
+                  <span className={'block text-sm ' + (a.days <= 3 ? 'text-red font-medium' : 'text-muted')}>{dueText(a.days)}</span>
+                </span>
+                <span className="font-display text-lg font-semibold">{peso(a.current)}</span>
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => setPage('creditcards')} className="mt-3 text-sm text-blue font-medium hover:underline">See all credit cards</button>
+        </section>
+      )}
     </div>
   );
 }

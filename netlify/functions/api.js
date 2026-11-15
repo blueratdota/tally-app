@@ -1,15 +1,19 @@
 const crypto = require('crypto');
 const sheetsDb = require('./lib/sheets');
-const { computeSavingsBalance, computeCreditCard, computeNetWorth } = require('./lib/balances');
+const { computeSavingsBalance, computeCreditCard, computeNetWorth, monthlySpending } = require('./lib/balances');
+const { passcodeOk, denied } = require('./lib/passcode');
 
 const VALID_TYPES = ['savings', 'creditcard', 'loan'];
 const VALID_TX_TYPES = ['income', 'expense', 'transfer'];
+const PEOPLE = ['p1', 'p2'];
+const OWNERS = [...PEOPLE, 'shared'];
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
 exports.handler = async (event) => {
+  if (!passcodeOk(event)) return denied;
   const resource = event.queryStringParameters?.resource;
   try {
     if (resource === 'accounts') return await handleAccounts(event);
@@ -30,7 +34,10 @@ async function handleAccounts(event) {
       return a; // loan: balance field is already the stored, manually-maintained value
     });
     const netWorth = computeNetWorth(live, transactions);
-    return json(200, { success: true, accounts: enriched, netWorth });
+    const month = /^\d{4}-\d{2}$/.test(event.queryStringParameters?.month || '')
+      ? event.queryStringParameters.month : new Date().toISOString().slice(0, 7);
+    const spending = monthlySpending(transactions, month);
+    return json(200, { success: true, accounts: enriched, netWorth, spending, month });
   }
 
   if (event.httpMethod === 'POST') {
@@ -38,6 +45,9 @@ async function handleAccounts(event) {
 
     if (body.action === 'update') {
       if (!body.id) return json(400, { success: false, error: 'Missing id' });
+      if (body.patch?.owner !== undefined && !OWNERS.includes(body.patch.owner)) {
+        return json(400, { success: false, error: 'Owner must be p1, p2 or shared' });
+      }
       const updated = await sheetsDb.updateAccount(body.id, body.patch || {});
       return json(200, { success: true, account: updated });
     }
@@ -51,6 +61,7 @@ async function handleAccounts(event) {
     // default action: create
     if (!VALID_TYPES.includes(body.type)) return json(400, { success: false, error: 'Invalid account type' });
     if (!body.name || !body.name.trim()) return json(400, { success: false, error: 'Name is required' });
+    if (!OWNERS.includes(body.owner)) return json(400, { success: false, error: 'Owner must be p1, p2 or shared' });
     if (body.type === 'creditcard') {
       const c = Number(body.cutoff_day), d = Number(body.due_day);
       if (!(c >= 1 && c <= 31) || !(d >= 1 && d <= 31)) {
@@ -69,7 +80,8 @@ async function handleAccounts(event) {
       cutoff_day: body.type === 'creditcard' ? Number(body.cutoff_day) : '',
       due_day: body.type === 'creditcard' ? Number(body.due_day) : '',
       logo_url: body.logo_url || '',
-      archived: false
+      archived: false,
+      owner: body.owner
     };
     await sheetsDb.appendAccount(account);
     return json(200, { success: true, account });
@@ -100,6 +112,7 @@ async function handleTransactions(event) {
     const numAmount = Number(amount);
     if (!(numAmount > 0)) return json(400, { success: false, error: 'Amount must be a positive number' });
     if (!description || !description.trim()) return json(400, { success: false, error: 'Description is required' });
+    if (!PEOPLE.includes(body.person)) return json(400, { success: false, error: 'Say who this transaction is for (p1 or p2)' });
 
     if (type === 'income' && !body.to_account_id) return json(400, { success: false, error: 'Income needs a destination account' });
     if (type === 'expense' && !body.from_account_id) return json(400, { success: false, error: 'Expense needs a source account' });
@@ -116,7 +129,8 @@ async function handleTransactions(event) {
       category: body.category || '',
       from_account_id: body.from_account_id || '',
       to_account_id: body.to_account_id || '',
-      voided: false
+      voided: false,
+      person: body.person
     };
     await sheetsDb.appendTransaction(tx);
 

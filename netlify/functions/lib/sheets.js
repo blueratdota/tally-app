@@ -5,8 +5,8 @@ const ACCOUNTS_TAB = 'Accounts';
 const TX_TAB = 'Transactions';
 
 // Column order — keep in sync with the header row created in setupSheet().
-const ACCOUNTS_COLS = ['id', 'type', 'name', 'balance', 'cutoff_day', 'due_day', 'logo_url', 'archived'];
-const TX_COLS = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'voided'];
+const ACCOUNTS_COLS = ['id', 'type', 'name', 'balance', 'cutoff_day', 'due_day', 'logo_url', 'archived', 'owner'];
+const TX_COLS = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'voided', 'person'];
 
 let cachedClient = null;
 
@@ -74,7 +74,7 @@ async function ensureSheetsExist() {
 async function listAccounts() {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:H` });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` });
   return (res.data.values || []).map(r => rowToObject(r, ACCOUNTS_COLS)).filter(a => a.id);
 }
 
@@ -96,7 +96,7 @@ async function updateAccount(id, patch) {
   const merged = { ...accounts[idx], ...patch };
   const rowNum = idx + 2; // +2: header row + 1-indexing
   await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:H${rowNum}`, valueInputOption: 'USER_ENTERED',
+    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:I${rowNum}`, valueInputOption: 'USER_ENTERED',
     requestBody: { values: [objectToRow(merged, ACCOUNTS_COLS)] }
   });
   return merged;
@@ -105,7 +105,7 @@ async function updateAccount(id, patch) {
 async function listTransactions() {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2:I` });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2:J` });
   return (res.data.values || []).map(r => rowToObject(r, TX_COLS)).filter(t => t.id);
 }
 

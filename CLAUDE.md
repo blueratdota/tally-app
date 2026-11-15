@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Tally is a household money dashboard: credit cards (with cutoff/due dates), loans, multiple savings accounts, and a live net worth view. No authentication — anyone with the site link can use it.
+Tally is a money dashboard for a two-person household: credit cards (with cutoff/due dates), loans, multiple savings accounts, a live net worth view, and monthly spending per person. Access is gated by one shared household passcode (`APP_PASSCODE`); there are no per-user accounts.
 
 Architecture:
 ```
@@ -17,6 +17,7 @@ Google Sheets is the actual database (via a service account) — there is no oth
 ## Commands
 
 - `npm run dev` — Vite dev server only (UI only; API calls fail with nothing to answer them)
+- `node dev/offline.mjs` — Vite + the real `api.js` handler with `sheets.js` swapped for an in-memory store (no credentials needed, data resets on restart, passcode `demo`, logo upload disabled)
 - `netlify dev` — runs the React app and Netlify Functions together (needs Netlify CLI + a local `.env` — see Environment below); use this to exercise real app behavior end-to-end
 - `npm run build` — Vite production build
 - `npm test` — runs `test/balances.test.js` directly with `node` (plain `assert`-based, no test framework/runner). To run it: `node test/balances.test.js`
@@ -24,11 +25,11 @@ Google Sheets is the actual database (via a service account) — there is no oth
 ## Environment variables
 
 Required (in Netlify site config or a local `.env` for `netlify dev`):
-`SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+`APP_PASSCODE`, `SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`. If `APP_PASSCODE` is unset, every API call is refused (fails closed).
 
 ## Architecture
 
-**Backend (`netlify/functions/`)** — two functions:
+**Backend (`netlify/functions/`)** — two functions, both of which first check the `x-tally-passcode` header via `lib/passcode.js` (constant-time compare, returns 401):
 - `api.js` — single handler routing on `?resource=accounts|transactions`, dispatching by `event.httpMethod` and a `body.action` field (`create` is the default action; `update`/`archive`/`void` are explicit). All validation happens inline here before touching the sheet.
 - `upload-logo.js` — accepts a base64 data URI, uploads to Cloudinary under `tally-card-logos`, returns the secure URL.
 - `lib/sheets.js` — the only place that talks to Google Sheets. Row↔object mapping is column-order-based (`ACCOUNTS_COLS`, `TX_COLS` arrays) — if you add a field, update the relevant COLS array and keep it in sync with the header row logic in `ensureSheetsExist()`. Updates/voids work by re-finding the row by scanning `listAccounts()`/`listTransactions()` and overwriting that row — there's no row-id-to-row-number index.
@@ -48,3 +49,5 @@ Required (in Netlify site config or a local `.env` for `netlify dev`):
 - Every balance is *calculated* from the transaction ledger except loans (manually-set, then adjusted by payments) — the Sheet is always the source of truth and can be inspected directly.
 - Transactions are never edited or deleted — `void` sets a `voided` flag and the row stays for audit purposes; `balances.js` and `api.js` both filter voided transactions out.
 - Accounts are never deleted — `archive` sets an `archived` flag; archived accounts are excluded from the accounts list, net worth, and dashboard.
+- Two people are fixed as `p1`/`p2` (display names live in `PEOPLE` in `src/lib/format.js`, so renaming never touches the sheet). Accounts have an `owner` (`p1`/`p2`/`shared`, column I); transactions have a `person` (`p1`/`p2`, column J) — both appended after the original columns so `voided` stays in column I of Transactions.
+- `GET ?resource=accounts&month=YYYY-MM` also returns `spending` from `monthlySpending()` in `balances.js` (expenses per person and category). The client sends its local month so the Philippines/UTC offset doesn't shift the month boundary.

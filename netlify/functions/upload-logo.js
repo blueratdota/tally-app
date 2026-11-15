@@ -1,4 +1,5 @@
 const cloudinary = require('cloudinary').v2;
+const { passcodeOk, denied } = require('./lib/passcode');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -11,6 +12,7 @@ function json(statusCode, body) {
 }
 
 exports.handler = async (event) => {
+  if (!passcodeOk(event)) return denied;
   if (event.httpMethod !== 'POST') return json(405, { success: false, error: 'Method not allowed' });
 
   try {
