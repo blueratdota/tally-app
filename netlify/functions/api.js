@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const sheetsDb = require('./lib/sheets');
-const { computeSavingsBalance, computeCreditCard, computeNetWorth, monthlySpending } = require('./lib/balances');
+const { computeSavingsBalance, computeCreditCard, computeNetWorth, monthlySpending, netWorthHistory } = require('./lib/balances');
 const { passcodeOk, denied } = require('./lib/passcode');
 
 const VALID_TYPES = ['savings', 'creditcard', 'loan'];
@@ -36,11 +36,16 @@ async function handleAccounts(event) {
     // Every view at once (all / p1 / p2 = that person's accounts plus shared), so the
     // client can switch person without another round trip to Sheets.
     const netWorthByView = { all: computeNetWorth(live, transactions) };
-    for (const p of PEOPLE) netWorthByView[p] = computeNetWorth(live.filter(a => a.owner === p || a.owner === 'shared'), transactions);
+    const historyByView = { all: netWorthHistory(live, transactions) };
+    for (const p of PEOPLE) {
+      const mine = live.filter(a => a.owner === p || a.owner === 'shared');
+      netWorthByView[p] = computeNetWorth(mine, transactions);
+      historyByView[p] = netWorthHistory(mine, transactions);
+    }
     const month = /^\d{4}-\d{2}$/.test(event.queryStringParameters?.month || '')
       ? event.queryStringParameters.month : new Date().toISOString().slice(0, 7);
     const spending = monthlySpending(transactions, month);
-    return json(200, { success: true, accounts: enriched, netWorthByView, spending, month });
+    return json(200, { success: true, accounts: enriched, netWorthByView, historyByView, spending, month });
   }
 
   if (event.httpMethod === 'POST') {

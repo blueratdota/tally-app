@@ -72,7 +72,7 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
 
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent className="bg-card max-w-[440px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card max-w-[440px]">
         <DialogHeader><DialogTitle className="font-display text-xl">{account ? 'Edit' : 'Add'} {LABELS[type]}</DialogTitle></DialogHeader>
 
         <form onSubmit={handleSubmit} className="grid gap-3">
@@ -106,8 +106,8 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
                 <div className="w-14 h-9 rounded-md bg-muted border border-dashed flex items-center justify-center overflow-hidden text-[10px] text-muted-foreground shrink-0">
                   {logoPreview ? <img src={logoPreview} alt="" className="w-full h-full object-cover" /> : 'No logo'}
                 </div>
-                <div>
-                  <input type="file" accept="image/*" onChange={onLogoFile} className="text-xs" aria-label="Card logo" />
+                <div className="min-w-0 flex-1">
+                  <input type="file" accept="image/*" onChange={onLogoFile} className="w-full min-w-0 text-xs" aria-label="Card logo" />
                   <div className="text-[11px] text-muted-foreground mt-1">Optional — a photo or screenshot of the card works fine.</div>
                 </div>
               </div>

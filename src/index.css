@@ -27,7 +27,28 @@
     --radius: 0.5rem;
   }
   * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans antialiased; font-variant-numeric: tabular-nums; min-height: 100vh; }
+  body { @apply bg-background text-foreground font-sans antialiased; font-variant-numeric: tabular-nums; min-height: 100vh; min-height: 100dvh; }
+}
+
+/* Keep controls clear of iPhone cutouts and the home indicator in either orientation. */
+.app-shell {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+.record-transaction {
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
+  right: max(1rem, env(safe-area-inset-right));
+}
+@media (min-width: 640px) {
+  .app-shell { padding-left: max(1.5rem, env(safe-area-inset-left)); padding-right: max(1.5rem, env(safe-area-inset-right)); }
+  .record-transaction { left: auto; }
+}
+/* iPad also needs 16px fields to avoid Safari zooming when a field receives focus. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
 }
 
 .receipt-torn {

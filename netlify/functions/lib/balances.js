@@ -125,8 +125,20 @@ function monthlySpending(transactions, month) {
   return out;
 }
 
+// Net worth at the end of each of the last `months` months (the current month ends today).
+// ponytail: loans have no history (stored balance), so every point uses today's loan balance.
+function netWorthHistory(accounts, transactions, months = 12, today = new Date()) {
+  const out = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const end = i === 0 ? today : new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
+    out.push({ month: isoDate(end).slice(0, 7), netWorth: computeNetWorth(accounts, transactions, end).netWorth });
+  }
+  return out;
+}
+
 module.exports = {
   monthlySpending,
+  netWorthHistory,
   round2,
   lastCutoffDate,
   computeSavingsBalance,

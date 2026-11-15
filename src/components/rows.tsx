@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 export function PageHead({ title, action, onAction }: { title: string; action: string; onAction: () => void }) {
   return (
-    <div className="flex justify-between items-center mb-4">
+    <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
       <h2 className="font-display text-xl font-semibold">{title}</h2>
       <Button onClick={onAction}>{action}</Button>
     </div>
@@ -23,14 +23,14 @@ interface RowProps { title: string; sub: ReactNode; amount: string; amountTone: 
 
 export function Row({ title, sub, amount, amountTone, onEdit, logo }: RowProps) {
   return (
-    <li className="flex items-center gap-3 px-4 py-3.5">
+    <li className="flex flex-wrap items-center gap-3 px-4 py-3.5">
       {logo}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-[50%] sm:min-w-0">
         <div className="font-medium truncate">{title}</div>
         <div className="text-sm text-muted-foreground">{sub}</div>
       </div>
-      <div className={cn('font-display text-lg font-semibold', amountTone)}>{amount}</div>
-      <Button variant="link" size="sm" onClick={onEdit} aria-label={'Edit ' + title} className="-mr-2">Edit</Button>
+      <div className={cn('max-w-full break-words font-display text-lg font-semibold', amountTone)}>{amount}</div>
+      <Button variant="link" size="sm" onClick={onEdit} aria-label={'Edit ' + title} className="ml-auto -mr-2 sm:ml-0">Edit</Button>
     </li>
   );
 }

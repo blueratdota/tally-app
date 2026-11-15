@@ -34,6 +34,7 @@ export interface Transaction {
 }
 
 export interface NetWorth { savings: number; cardDebt: number; futureDebt: number; loanDebt: number; netWorth: number }
+export interface NetWorthPoint { month: string; netWorth: number }
 export interface PersonSpending { total: number; categories: Record<string, number> }
 export interface Spending { total: number; p1: PersonSpending; p2: PersonSpending }
 
@@ -69,7 +70,7 @@ export type NewTransaction = Omit<Transaction, 'id'>;
 
 export const api = {
   getAccounts: (month: string) =>
-    call<{ accounts: Account[]; netWorthByView: Record<View, NetWorth>; spending: Spending }>(fn('accounts') + `&month=${month}`),
+    call<{ accounts: Account[]; netWorthByView: Record<View, NetWorth>; historyByView: Record<View, NetWorthPoint[]>; spending: Spending }>(fn('accounts') + `&month=${month}`),
   getTransactions: () => call<{ transactions: Transaction[] }>(fn('transactions')),
   createTransaction: (payload: NewTransaction) => call(fn('transactions'), payload),
   voidTransaction: (id: string) => call(fn('transactions'), { action: 'void', id }),

@@ -19,7 +19,7 @@ const dueText = (d: number) => (d === 0 ? 'due today' : d === 1 ? 'due tomorrow'
 
 function SumLine({ label, amount, sign, tone }: { label: string; amount: number; sign: string; tone: string }) {
   return (
-    <div className="flex items-baseline justify-between py-2 border-b">
+    <div className="flex items-baseline justify-between gap-3 flex-wrap py-2 border-b">
       <span className="text-muted-foreground text-[15px]">{sign} {label}</span>
       <span className={cn('font-display text-xl font-semibold', tone)}>{peso(amount)}</span>
     </div>
@@ -64,20 +64,20 @@ export default function Dashboard({ netWorth, spending, byType, setPage, view }:
           </div>
         )}
         <SumLine sign="−" label="Loans" amount={netWorth.loanDebt} tone="text-destructive" />
-        <div className="double-rule flex items-baseline justify-between pt-4 pb-3">
+        <div className="double-rule flex items-baseline justify-between gap-2 flex-wrap pt-4 pb-3">
           <span className="font-semibold">Net worth</span>
-          <span className="font-display font-bold tracking-tight text-[clamp(36px,9vw,52px)] leading-none">{peso(netWorth.netWorth)}</span>
+          <span className="font-display font-bold tracking-tight max-w-full break-words text-[clamp(28px,7vw,52px)] leading-none">{peso(netWorth.netWorth)}</span>
         </div>
         {empty && <p className="text-muted-foreground text-sm mt-4">Nothing tracked yet. Add a savings account to start your total.</p>}
       </section>
 
       {spending && (
         <section className="mb-10">
-          <div className="flex items-baseline justify-between mb-2">
+          <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
             <h2 className="font-display text-lg font-semibold">Spent this month</h2>
             {view === 'all' && <span className="text-sm text-muted-foreground">Together {peso(spending.total)}</span>}
           </div>
-          <div className={cn('grid gap-3', view === 'all' ? 'grid-cols-2' : 'grid-cols-1')}>
+          <div className={cn('grid gap-3', view === 'all' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1')}>
             {view !== 'p2' && <PersonSpending name={PEOPLE.p1} data={spending.p1} />}
             {view !== 'p1' && <PersonSpending name={PEOPLE.p2} data={spending.p2} />}
           </div>
@@ -91,7 +91,7 @@ export default function Dashboard({ netWorth, spending, byType, setPage, view }:
           <Card>
             <ul className="divide-y">
               {cards.map(a => (
-                <li key={a.id} className="flex items-baseline justify-between px-4 py-3">
+                <li key={a.id} className="flex items-baseline justify-between gap-3 flex-wrap px-4 py-3">
                   <span>
                     <span className="font-medium">{a.name}</span>
                     <span className={cn('block text-sm', a.days <= 3 ? 'text-destructive font-medium' : 'text-muted-foreground')}>{dueText(a.days)}</span>

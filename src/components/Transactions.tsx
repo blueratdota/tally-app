@@ -14,12 +14,12 @@ function TxLine({ t, accountName, onVoid }: { t: Transaction; accountName: Accou
     : t.type === 'expense' ? [`${t.category || 'Other'}, ${accountName(t.from_account_id)}`, '-', 'text-destructive']
     : [`${accountName(t.from_account_id)} → ${accountName(t.to_account_id)}`, '', 'text-foreground'];
   return (
-    <div className="grid grid-cols-[72px_1fr_auto_auto] items-center gap-2.5 py-2.5 border-b border-dashed border-foreground/20 text-sm last:border-none">
-      <span className="text-muted-foreground text-xs">{t.date.slice(5)}</span>
-      <span className="font-medium">{t.description}<span className="block text-xs text-muted-foreground font-normal mt-0.5">{who}{detail}</span></span>
-      <span className={cn('font-semibold whitespace-nowrap', tone)}>{sign}{peso(t.amount)}</span>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[60px_minmax(0,1fr)_auto_auto] items-center gap-2.5 py-2.5 border-b border-dashed border-foreground/20 text-sm last:border-none">
+      <span className="col-span-2 text-muted-foreground text-xs sm:col-span-1">{t.date.slice(5)}</span>
+      <span className="min-w-0 break-words font-medium">{t.description}<span className="block text-xs text-muted-foreground font-normal mt-0.5">{who}{detail}</span></span>
+      <span className={cn('text-right font-semibold whitespace-nowrap', tone)}>{sign}{peso(t.amount)}</span>
       <Button variant="outline" size="sm" onClick={() => onVoid(t.id)}
-        className="h-7 px-2 text-xs text-muted-foreground hover:bg-destructive hover:border-destructive hover:text-destructive-foreground">
+        className="col-start-2 sm:col-start-auto px-2 text-xs text-muted-foreground hover:bg-destructive hover:border-destructive hover:text-destructive-foreground">
         Void
       </Button>
     </div>
@@ -46,7 +46,7 @@ export default function Transactions({ transactions, accountName, reload }: { tr
         <div className="text-center pt-[18px] pb-3 px-5 border-b border-dashed border-foreground/30">
           <div className="font-display font-semibold">All activity</div>
         </div>
-        <div className="px-[22px] py-1.5 max-h-[460px] overflow-y-auto">
+        <div className="px-3 sm:px-[22px] py-1.5 sm:max-h-[60dvh] sm:overflow-y-auto">
           {transactions.length
             ? transactions.slice(0, limit).map(t => <TxLine key={t.id} t={t} accountName={accountName} onVoid={handleVoid} />)
             : <div className="text-center py-8 text-muted-foreground text-sm">No transactions yet. Use Record transaction to add the first one.</div>}

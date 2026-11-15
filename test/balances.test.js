@@ -4,7 +4,8 @@ const {
   computeSavingsBalance,
   computeCreditCard,
   computeNetWorth,
-  monthlySpending
+  monthlySpending,
+  netWorthHistory
 } = require('../netlify/functions/lib/balances');
 const { passcodeOk } = require('../netlify/functions/lib/passcode');
 
@@ -95,3 +96,17 @@ assert.strictEqual(passcodeOk({ headers: {} }, 'abc'), false);
 assert.strictEqual(passcodeOk({ headers: { 'x-tally-passcode': '' } }, ''), false);
 
 console.log('All balance checks passed.');
+
+// --- net worth history: one point per month-end, current month = today ---
+{
+  const accts = [{ id: 's', type: 'savings' }];
+  const txs = [
+    { type: 'income', amount: 100, to_account_id: 's', date: '2026-01-10' },
+    { type: 'income', amount: 50, to_account_id: 's', date: '2026-03-02' },
+    { type: 'income', amount: 999, to_account_id: 's', date: '2026-03-20' } // after "today": excluded
+  ];
+  const h = netWorthHistory(accts, txs, 3, new Date(2026, 2, 15));
+  assert.deepStrictEqual(h, [
+    { month: '2026-01', netWorth: 100 }, { month: '2026-02', netWorth: 100 }, { month: '2026-03', netWorth: 150 }
+  ]);
+}

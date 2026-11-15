@@ -84,7 +84,7 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
 
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent className="bg-card max-w-[440px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card max-w-[440px]">
         <DialogHeader><DialogTitle className="font-display text-xl">Record transaction</DialogTitle></DialogHeader>
 
         <ToggleGroup type="single" variant="outline" value={type} onValueChange={v => v && setType(v as TxType)} className="grid grid-cols-3">
@@ -105,7 +105,7 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
             </ToggleGroup>
           </div>
           <div className="grid gap-1.5"><Label htmlFor="date">Date</Label><Input id="date" type="date" required value={date} onChange={e => setDate(e.target.value)} /></div>
-          <div className="grid gap-1.5"><Label htmlFor="amount">Amount (₱)</Label><Input id="amount" type="number" step="0.01" min="0.01" required placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div>
+          <div className="grid gap-1.5"><Label htmlFor="amount">Amount (₱)</Label><Input id="amount" inputMode="decimal" type="number" step="0.01" min="0.01" required placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div>
           <div className="grid gap-1.5"><Label htmlFor="desc">Description</Label><Input id="desc" required placeholder="e.g. Salary, Grocery run, Card payment" value={description} onChange={e => setDescription(e.target.value)} /></div>
 
           {type === 'income' && <AccountSelect id="to" label="Deposit into" value={toAccount} onChange={setToAccount} groups={[['Savings', savings]]} />}
