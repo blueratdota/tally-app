@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-// Colors are shadcn/ui tokens, set from the Tally palette in src/index.css.
+// Theme tokens are defined in src/index.css.
 const v = name => `hsl(var(--${name}))`;
 module.exports = {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -20,8 +20,8 @@ module.exports = {
         ring: v('ring')
       },
       fontFamily: {
-        sans: ['"IBM Plex Sans"', 'sans-serif'],
-        display: ['"IBM Plex Sans Condensed"', '"IBM Plex Sans"', 'sans-serif']
+        sans: ['Manrope', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        display: ['Manrope', '-apple-system', 'BlinkMacSystemFont', 'sans-serif']
       },
       borderRadius: {
         lg: 'var(--radius)',

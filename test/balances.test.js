@@ -83,7 +83,7 @@ const sp = monthlySpending([
   { type: 'expense', amount: 999, person: 'p2', date: '2026-10-31' },            // other month
   { type: 'expense', amount: 999, person: 'p1', date: '2026-11-05', voided: true },
   { type: 'income', amount: 999, person: 'p1', date: '2026-11-05' }              // not an expense
-], '2026-11');
+], '2026-11', new Date(2026, 10, 30));
 assert.strictEqual(sp.total, 180.5);
 assert.strictEqual(sp.p1.total, 150.5);
 assert.strictEqual(sp.p1.categories.Dining, 150.5);
@@ -110,3 +110,11 @@ console.log('All balance checks passed.');
     { month: '2026-01', netWorth: 100 }, { month: '2026-02', netWorth: 100 }, { month: '2026-03', netWorth: 150 }
   ]);
 }
+
+// A scheduled future card payment must not reduce today's debt.
+assert.strictEqual(computeCreditCard(card, [...cardTxs, { type: 'transfer', amount: 1000, to_account_id: 'cc1', date: '2026-02-01' }], today).total, 150);
+
+// Future charges remain scheduled, and midnight in Manila is consistent on UTC hosts.
+const { householdToday } = require('../netlify/functions/lib/balances');
+assert.strictEqual(householdToday(new Date('2026-11-15T16:30:00Z')).toLocaleDateString('en-CA'), '2026-11-16');
+assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1', date: '2026-11-20' }], '2026-11', new Date(2026, 10, 15)).total, 0);

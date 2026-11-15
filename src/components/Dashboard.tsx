@@ -1,13 +1,15 @@
-import { peso, PEOPLE } from '@/lib/format';
+import { usePeople } from '@/lib/household';
+import { peso, localDate } from '@/lib/format';
 import type { Account, AccountType, NetWorth, PersonSpending as PS, Spending, View } from '@/lib/api';
 import type { Page } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { ArrowUpRight, Wallet, CreditCard, Landmark, CalendarDays } from 'lucide-react';
 
 // Days until the card's next due day (clamped to short months).
 function daysUntilDue(dueDay: number) {
-  const now = new Date();
+  const now = new Date(localDate() + 'T12:00:00');
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const at = (y: number, m: number) => new Date(y, m, Math.min(dueDay, new Date(y, m + 1, 0).getDate()));
   let due = at(today.getFullYear(), today.getMonth());
@@ -17,24 +19,19 @@ function daysUntilDue(dueDay: number) {
 
 const dueText = (d: number) => (d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`);
 
-function SumLine({ label, amount, sign, tone }: { label: string; amount: number; sign: string; tone: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 flex-wrap py-2 border-b">
-      <span className="text-muted-foreground text-[15px]">{sign} {label}</span>
-      <span className={cn('font-display text-xl font-semibold', tone)}>{peso(amount)}</span>
-    </div>
-  );
-}
-
 function PersonSpending({ name, data }: { name: string; data: PS }) {
   const top = Object.entries(data.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
   return (
-    <Card className="p-4">
-      <div className="font-medium">{name}</div>
-      <div className="font-display text-2xl font-semibold mb-2">{peso(data.total)}</div>
-      {top.length
-        ? <ul className="text-sm text-muted-foreground space-y-0.5">{top.map(([c, v]) => <li key={c} className="flex justify-between gap-2"><span>{c}</span><span>{peso(v)}</span></li>)}</ul>
-        : <p className="text-sm text-muted-foreground">No expenses yet</p>}
+    <Card className="p-5 sm:p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="flex size-8 items-center justify-center rounded-full bg-accent text-xs font-bold text-primary" aria-hidden="true">{name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+        <span className="min-w-0 break-words text-sm font-semibold">{name}</span>
+      </div>
+      <div className="text-2xl font-bold tracking-tight break-all mb-5">{peso(data.total)}</div>
+      {top.length ? <ul className="space-y-4">{top.map(([c, v]) => <li key={c}>
+        <div className="flex flex-wrap justify-between gap-2 text-xs mb-2"><span className="text-muted-foreground">{c}</span><span className="font-semibold">{peso(v)}</span></div>
+        <div className="h-1.5 rounded-full bg-muted"><div className="h-full rounded-full bg-primary/70" style={{ width: `${data.total ? v / data.total * 100 : 0}%` }} /></div>
+      </li>)}</ul> : <p className="text-sm text-muted-foreground">No expenses yet this month.</p>}
     </Card>
   );
 }
@@ -48,62 +45,71 @@ interface Props {
 }
 
 export default function Dashboard({ netWorth, spending, byType, setPage, view }: Props) {
+  const PEOPLE = usePeople();
   const cards = byType('creditcard')
     .map(a => ({ ...a, days: daysUntilDue(Number(a.due_day)) }))
     .sort((a, b) => a.days - b.days);
   const empty = !netWorth.savings && !netWorth.cardDebt && !netWorth.loanDebt;
 
   return (
-    <div className="max-w-xl">
-      <section className="mb-10">
-        <SumLine sign="" label="Savings" amount={netWorth.savings} tone="text-primary" />
-        <SumLine sign="−" label="Credit card debt" amount={netWorth.cardDebt} tone="text-destructive" />
-        {netWorth.futureDebt > 0 && (
-          <div className="text-xs text-muted-foreground text-right -mt-1 py-1 border-b">
-            plus {peso(netWorth.futureDebt)} in upcoming card installments (total with these: {peso(netWorth.cardDebt + netWorth.futureDebt)})
-          </div>
-        )}
-        <SumLine sign="−" label="Loans" amount={netWorth.loanDebt} tone="text-destructive" />
-        <div className="double-rule flex items-baseline justify-between gap-2 flex-wrap pt-4 pb-3">
-          <span className="font-semibold">Net worth</span>
-          <span className="font-display font-bold tracking-tight max-w-full break-words text-[clamp(28px,7vw,52px)] leading-none">{peso(netWorth.netWorth)}</span>
-        </div>
-        {empty && <p className="text-muted-foreground text-sm mt-4">Nothing tracked yet. Add a savings account to start your total.</p>}
-      </section>
+    <div className="space-y-7 sm:space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div><p className="text-xs text-muted-foreground mb-1.5">THE BIG PICTURE</p><h1 className="text-3xl font-bold tracking-tight">Overview</h1></div>
+        <span className="text-xs text-muted-foreground flex items-center gap-2"><CalendarDays className="size-4" aria-hidden="true" />{new Date(localDate() + 'T12:00:00').toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}</span>
+      </div>
 
-      {spending && (
-        <section className="mb-10">
-          <div className="flex items-baseline justify-between flex-wrap gap-2 mb-2">
-            <h2 className="font-display text-lg font-semibold">Spent this month</h2>
-            {view === 'all' && <span className="text-sm text-muted-foreground">Together {peso(spending.total)}</span>}
+      <section className="balance-hero relative isolate overflow-hidden rounded-3xl p-6 text-white sm:p-8" aria-label="Net worth summary">
+        <div className="relative z-10">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <span className="text-sm text-white/75">Total net worth</span>
+            <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/80"><span className="size-1.5 shrink-0 rounded-full bg-[#d6efbd]" /><span className="truncate">{view === 'all' ? 'Your household' : PEOPLE[view]}</span></span>
           </div>
-          <div className={cn('grid gap-3', view === 'all' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1')}>
+          <div className="text-[clamp(30px,6vw,56px)] font-semibold leading-tight tracking-[-0.04em] break-all">{peso(netWorth.netWorth)}</div>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-white/65">Savings minus credit card and loan balances</p>
+            <Button variant="ghost" onClick={() => setPage('insights')} className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white px-4">Explore insights<ArrowUpRight aria-hidden="true" /></Button>
+          </div>
+        </div>
+      </section>
+      {empty && <p className="text-sm text-muted-foreground">Start with a savings account to bring your overview to life. <button className="font-semibold text-primary underline underline-offset-4" onClick={() => setPage('savings')}>Add an account</button></p>}
+
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4" aria-label="Balances">
+        {[
+          { label: 'Savings', amount: netWorth.savings, icon: Wallet, page: 'savings' as Page, note: 'Across your savings accounts', tone: 'text-primary' },
+          { label: 'Credit card debt', amount: netWorth.cardDebt, icon: CreditCard, page: 'creditcards' as Page, note: 'Billed + not yet billed', tone: 'text-foreground' },
+          { label: 'Loans', amount: netWorth.loanDebt, icon: Landmark, page: 'loans' as Page, note: 'Remaining loan balance', tone: 'text-foreground' }
+        ].map(({ label, amount, icon: Icon, page, note, tone }, i) => (
+          <Card key={page} className={cn('p-4 sm:p-5', i === 0 && 'col-span-2 sm:col-span-1')}>
+            <div className="flex items-center justify-between gap-2 mb-4"><span className="flex size-9 items-center justify-center rounded-xl bg-muted text-primary"><Icon className="size-[18px]" aria-hidden="true" /></span><Button variant="ghost" size="icon" className="-mr-2 text-muted-foreground" aria-label={`View ${label.toLowerCase()}`} onClick={() => setPage(page)}><ArrowUpRight aria-hidden="true" /></Button></div>
+            <p className="text-xs text-muted-foreground mb-2">{label}</p>
+            <p className={cn('text-xl sm:text-2xl font-bold tracking-tight break-all', tone)}>{peso(amount)}</p>
+            <p className="text-[11px] text-muted-foreground mt-2">{note}</p>
+          </Card>
+        ))}
+      </section>
+      {netWorth.futureDebt > 0 && <p className="text-xs text-muted-foreground rounded-xl border border-dashed px-4 py-3">Upcoming installments: <span className="font-semibold text-foreground">{peso(netWorth.futureDebt)}</span> · Total card debt including these: {peso(netWorth.cardDebt + netWorth.futureDebt)}</p>}
+
+      <div className="grid gap-7 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        {spending && <section className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div><h2 className="text-lg font-bold tracking-tight">This month's spending</h2>{view === 'all' && <p className="text-xs text-muted-foreground mt-1">{peso(spending.total)} together</p>}</div>
+            <Button variant="ghost" size="sm" className="text-primary" onClick={() => setPage('transactions')}>View activity<ArrowUpRight aria-hidden="true" /></Button>
+          </div>
+          <div className={cn('grid gap-3', view === 'all' ? 'sm:grid-cols-2' : 'grid-cols-1')}>
             {view !== 'p2' && <PersonSpending name={PEOPLE.p1} data={spending.p1} />}
             {view !== 'p1' && <PersonSpending name={PEOPLE.p2} data={spending.p2} />}
           </div>
-          <Button variant="link" className="mt-1 px-0" onClick={() => setPage('transactions')}>See each transaction</Button>
-        </section>
-      )}
-
-      {cards.length > 0 && (
-        <section>
-          <h2 className="font-display text-lg font-semibold mb-2">Coming due</h2>
+        </section>}
+        <section className="min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-4"><h2 className="text-lg font-bold tracking-tight">Coming due</h2><Button variant="ghost" size="sm" className="text-primary" onClick={() => setPage('creditcards')}>View cards<ArrowUpRight aria-hidden="true" /></Button></div>
           <Card>
-            <ul className="divide-y">
-              {cards.map(a => (
-                <li key={a.id} className="flex items-baseline justify-between gap-3 flex-wrap px-4 py-3">
-                  <span>
-                    <span className="font-medium">{a.name}</span>
-                    <span className={cn('block text-sm', a.days <= 3 ? 'text-destructive font-medium' : 'text-muted-foreground')}>{dueText(a.days)}</span>
-                  </span>
-                  <span className="font-display text-lg font-semibold">{peso(a.current)}</span>
-                </li>
-              ))}
-            </ul>
+            {cards.length ? <ul className="divide-y">{cards.map(a => <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div className="min-w-0 flex-1"><p className="font-semibold text-sm break-words">{a.name}</p><p className={cn('mt-1 text-xs', a.days <= 3 ? 'text-destructive' : 'text-muted-foreground')}>{dueText(a.days)}</p></div>
+              <span className="text-sm font-bold break-all">{peso(a.current)}</span>
+            </li>)}</ul> : <p className="p-6 text-sm text-muted-foreground">Your credit card due dates will appear here.</p>}
           </Card>
-          <Button variant="link" className="mt-1 px-0" onClick={() => setPage('creditcards')}>See all credit cards</Button>
         </section>
-      )}
+      </div>
     </div>
   );
 }

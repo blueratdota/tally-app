@@ -1,11 +1,14 @@
+import { usePeople } from '@/lib/household';
 import { useState } from 'react';
-import { peso, PEOPLE } from '@/lib/format';
-import type { NetWorthPoint, Transaction, View } from '@/lib/api';
+import { ArrowUpRight } from 'lucide-react';
+import { peso, localDate } from '@/lib/format';
+import type { NetWorthPoint, Person, Transaction, View } from '@/lib/api';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
-// Two validated series hues (dataviz validator: CVD ΔE 29, both ≥3:1 on white).
-const BLUE = '#2f5fd0', ORANGE = '#c2700a';
+const BLUE = '#0f766e', ORANGE = '#bd592a';
 const W = 640, H = 220, PAD = { l: 76, r: 12, t: 12, b: 26 };
 const PROJECT = 6; // months of trajectory shown past today
 
@@ -67,9 +70,9 @@ function NetWorthChart({ history }: { history: NetWorthPoint[] }) {
   };
 
   return (
-    <Card className="p-4">
+    <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-        <h3 className="font-display font-semibold">Net worth trajectory</h3>
+        <h3 className="font-display font-bold tracking-tight">Net worth trajectory</h3>
         <span className="text-sm text-muted-foreground">
           {perMonth >= 0 ? '+' : ''}{peso(perMonth)}/month · at this pace <span className="font-semibold text-foreground">{peso(future[PROJECT - 1].netWorth)}</span> by {monthLabel(future[PROJECT - 1].month, true)}
         </span>
@@ -108,16 +111,14 @@ function CashflowChart({ rows }: { rows: MonthRow[] }) {
   const slot = (W - PAD.l - PAD.r) / rows.length;
   const bw = Math.min(14, (slot - 8) / 2);
   const bar = (v: number, cx: number, color: string) => {
-    const top = y(v), h = Math.max(0, y(0) - top);
-    // 4px rounded data-end, square at the baseline
-    const r = Math.min(4, h);
-    return <path d={`M${cx},${y(0)}V${top + r}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}V${y(0)}Z`} fill={color} />;
+    const top = Math.min(y(v), y(0)), height = Math.abs(y(0) - y(v));
+    return <rect x={cx} y={top} width={bw} height={height} rx={Math.min(4, height / 2)} fill={color} />;
   };
   const h = hover === null ? null : rows[hover];
   return (
-    <Card className="p-4">
+    <Card className="p-5 sm:p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-        <h3 className="font-display font-semibold">Money in vs. spent</h3>
+        <h3 className="font-display font-bold tracking-tight">Money in vs. spent</h3>
         <div className="flex gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-sm" style={{ background: BLUE }} />Income</span>
           <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-sm" style={{ background: ORANGE }} />Spent</span>
@@ -148,8 +149,8 @@ function CashflowChart({ rows }: { rows: MonthRow[] }) {
   );
 }
 
-const th = 'px-3 py-2 text-left font-medium text-muted-foreground text-xs';
-const td = 'px-3 py-2 text-right whitespace-nowrap';
+const th = 'bg-muted/50 px-4 py-3 text-left font-semibold text-muted-foreground text-[11px]';
+const td = 'px-4 py-3 text-right whitespace-nowrap';
 
 function MonthTable({ rows }: { rows: MonthRow[] }) {
   return (
@@ -177,6 +178,7 @@ function MonthTable({ rows }: { rows: MonthRow[] }) {
 }
 
 function CategoryTable({ transactions, month, view }: { transactions: Transaction[]; month: string; view: View }) {
+  const PEOPLE = usePeople();
   const prev = [1, 2, 3].map(n => addMonths(month, -n));
   const now: Record<string, number> = {}, avg: Record<string, number> = {};
   const byPerson: Record<string, Record<string, number>> = {};
@@ -228,8 +230,9 @@ function CategoryTable({ transactions, month, view }: { transactions: Transactio
   );
 }
 
-export default function Insights({ transactions, history, view }: { transactions: Transaction[]; history: NetWorthPoint[]; view: View }) {
-  const month = new Date().toLocaleDateString('en-CA').slice(0, 7);
+export default function Insights({ transactions, history, view, onViewChange }: { transactions: Transaction[]; history: NetWorthPoint[]; view: View; onViewChange: (view: View) => void }) {
+  const PEOPLE = usePeople();
+  const month = localDate().slice(0, 7);
   const rows: MonthRow[] = Array.from({ length: 12 }, (_, i) => ({ month: addMonths(month, i - 11), income: 0, spent: 0 }));
   const idx = Object.fromEntries(rows.map((r, i) => [r.month, i]));
   for (const t of transactions) {
@@ -240,10 +243,42 @@ export default function Insights({ transactions, history, view }: { transactions
   }
 
   return (
-    <div className="space-y-8">
-      {history.length > 1 && <NetWorthChart history={history} />}
+    <div className="space-y-6">
+      <div><h2 className="text-3xl font-bold tracking-tight">Insights</h2><p className="text-sm text-muted-foreground mt-2 break-words">{view === 'all' ? 'Your household and each person, at a glance.' : `Income, spending, and trends for ${PEOPLE[view]}.`}</p></div>
+      <ToggleGroup type="single" value={view} onValueChange={v => v && onViewChange(v as View)} aria-label="Insights view" className="grid grid-cols-3 rounded-2xl bg-muted p-1 sm:max-w-md">
+        {([['all', 'Combined'], ...Object.entries(PEOPLE)] as [View, string][]).map(([id, name]) => <ToggleGroupItem key={id} value={id} className="min-w-0 rounded-xl px-2 text-xs data-[state=on]:bg-foreground data-[state=on]:text-white"><span className="truncate">{name}</span></ToggleGroupItem>)}
+      </ToggleGroup>
+      <section aria-label="Individual monthly summaries" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="min-w-0 max-w-full break-words text-lg font-bold tracking-tight">This month{view === 'all' ? ', by person' : ` · ${PEOPLE[view]}`}</h3>
+          {view !== 'all' && <Button variant="ghost" size="sm" onClick={() => onViewChange('all')}>Compare both people</Button>}
+        </div>
+        <p className="text-xs text-muted-foreground">Based on the person tagged on each transaction, including joint-account activity. Transfers are excluded.</p>
+        <div className={cn('grid gap-4', view === 'all' && 'sm:grid-cols-2')}>
+          {(Object.entries(PEOPLE) as [Person, string][]).filter(([id]) => view === 'all' || id === view).map(([id, name]) => {
+            const personal = transactions.filter(t => t.person === id && t.date.slice(0, 7) === month);
+            const income = personal.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
+            const spent = personal.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+            return <Card key={id} role="region" aria-label={`${name} this month`} className="p-5 sm:p-6">
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <h4 className="min-w-0 flex-1 break-words text-sm font-bold">{name}</h4>
+                {view === 'all' && <Button variant="ghost" size="sm" className="text-primary" aria-label={`View insights for ${name}`} onClick={() => onViewChange(id)}>Details<ArrowUpRight aria-hidden="true" /></Button>}
+              </div>
+              <dl className="space-y-3 text-sm">
+                <div className="flex flex-wrap justify-between gap-2"><dt className="text-muted-foreground">Income</dt><dd className="font-semibold break-all">{peso(income)}</dd></div>
+                <div className="flex flex-wrap justify-between gap-2"><dt className="text-muted-foreground">Expenses</dt><dd className="font-semibold break-all">{peso(spent)}</dd></div>
+                <div className="flex flex-wrap justify-between gap-2 border-t pt-3"><dt className="text-muted-foreground">Net cash flow</dt><dd className={cn('font-bold break-all', income - spent < 0 ? 'text-destructive' : 'text-primary')}>{peso(income - spent)}</dd></div>
+              </dl>
+            </Card>;
+          })}
+        </div>
+      </section>
+      {history.length > 1 && <div className="space-y-2">
+        <NetWorthChart key={view} history={history} />
+        {view !== 'all' && <p className="text-xs text-muted-foreground break-words">Only {PEOPLE[view]}'s own accounts are included. Joint accounts appear in Combined view.</p>}
+      </div>}
       <section className="space-y-3">
-        <CashflowChart rows={rows} />
+        <CashflowChart key={view} rows={rows} />
         <p className="text-xs text-muted-foreground sm:hidden">Swipe tables sideways to see all columns.</p>
         <MonthTable rows={rows} />
       </section>

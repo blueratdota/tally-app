@@ -3,6 +3,7 @@
 // With SHEET_ID set it talks to your real Google Sheet; without it, it uses an
 // in-memory store (data resets on restart, passcode "demo").
 import { createRequire } from 'module';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'vite';
 const require = createRequire(import.meta.url);
 
@@ -12,7 +13,29 @@ if (offline) {
   // SEED_FILE=path.json (from dev/import-moneymgr.mjs) preloads the in-memory store.
   const seed = process.env.SEED_FILE ? JSON.parse((await import('fs')).readFileSync(process.env.SEED_FILE, 'utf8')) : {};
   const accounts = seed.accounts ?? [], txs = seed.transactions ?? [];
+  const records = { Plans: seed.plans ?? [], Goals: seed.goals ?? [], Settings: seed.settings ?? [] };
   const mock = {
+    listRecords: async table => records[table].map(r => ({ ...r })),
+    commit: async ({ transactions = [], records: changes = [], voidIds = [] }) => {
+      const nextTx = txs.map(t => ({ ...t })), nextAccounts = accounts.map(a => ({ ...a }));
+      const nextRecords = Object.fromEntries(Object.entries(records).map(([key, rows]) => [key, rows.map(r => ({ ...r }))]));
+      const removed = nextTx.filter(t => !t.voided && voidIds.includes(t.id));
+      for (const t of nextTx) if (voidIds.includes(t.id)) t.voided = true;
+      const ids = new Set(nextTx.map(t => t.id));
+      const fresh = transactions.filter(t => { if (ids.has(t.id)) return false; ids.add(t.id); return true; });
+      for (const { table, record, previous } of changes) {
+        const rows = nextRecords[table], idx = rows.findIndex(r => r.id === record.id);
+        if (previous && (idx < 0 || Object.keys(record).some(k => k !== 'next_date' && String(rows[idx][k] ?? '') !== String(previous[k] ?? '')))) throw Object.assign(new Error('This item changed. Refresh before saving.'), { statusCode: 409 });
+        if (idx < 0) rows.push({ ...record }); else rows[idx] = { ...record };
+      }
+      for (const [t, sign] of [...fresh.map(t => [t, -1]), ...removed.map(t => [t, 1])]) {
+        const loan = t.type === 'transfer' && nextAccounts.find(a => a.id === t.to_account_id && a.type === 'loan');
+        if (loan) { loan.balance = Math.round((Number(loan.balance) + sign * Number(t.amount) + Number.EPSILON) * 100) / 100; if (!Number.isFinite(loan.balance)) throw new Error('Invalid loan balance'); }
+      }
+      nextTx.push(...fresh.map(t => ({ ...t })));
+      txs.splice(0, txs.length, ...nextTx); accounts.splice(0, accounts.length, ...nextAccounts);
+      Object.assign(records, nextRecords);
+    },
     listAccounts: async () => accounts.map(a => ({ ...a })),
     appendAccount: async a => { accounts.push({ ...a, archived: false }); },
     updateAccount: async (id, patch) => {
@@ -22,11 +45,29 @@ if (offline) {
     },
     listTransactions: async () => txs.map(t => ({ ...t })),
     appendTransaction: async t => { txs.push({ ...t, voided: false }); },
-    voidTransaction: async id => {
-      const t = txs.find(x => x.id === id);
-      if (!t) throw new Error('Transaction not found');
-      t.voided = true;
+    appendTransactions: async rows => { txs.push(...rows.map(t => ({ ...t, voided: false }))); },
+    updateTransaction: async (id, replacement, previous) => {
+      const current = txs.find(t => t.id === id);
+      if (!current) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
+      if (current.voided) {
+        if (!replacement) return;
+        throw Object.assign(new Error('This transaction has been voided. Refresh your data.'), { statusCode: 409 });
+      }
+      const fields = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'person', 'plan_id', 'plan_index'];
+      if (replacement && (!previous || fields.some(k => String(current[k] ?? '') !== String(previous[k] ?? '')))) {
+        throw Object.assign(new Error('This transaction changed since you opened it. Refresh before editing.'), { statusCode: 409 });
+      }
+      const balances = new Map();
+      for (const [tx, sign] of [[current, 1], [replacement, -1]]) {
+        const loan = tx?.type === 'transfer' && accounts.find(a => a.id === tx.to_account_id && a.type === 'loan');
+        if (loan) balances.set(loan, (balances.get(loan) ?? Number(loan.balance)) + sign * Number(tx.amount));
+      }
+      if ([...balances.values()].some(b => !Number.isFinite(b))) throw new Error('The loan has an invalid stored balance');
+      if (replacement) txs.push({ ...current, id: `${id}:revision:${randomUUID()}`, voided: true });
+      Object.assign(current, replacement || { voided: true });
+      for (const [loan, balance] of balances) loan.balance = Math.round((balance + Number.EPSILON) * 100) / 100;
     },
+    voidTransaction: async id => { await mock.updateTransaction(id, null); },
   };
   const sheetsPath = require.resolve('../netlify/functions/lib/sheets.js');
   require.cache[sheetsPath] = { id: sheetsPath, filename: sheetsPath, loaded: true, exports: mock };

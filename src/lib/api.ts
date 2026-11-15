@@ -31,6 +31,8 @@ export interface Transaction {
   from_account_id?: string;
   to_account_id?: string;
   person?: Person;
+  plan_id?: string;
+  plan_index?: number | string;
 }
 
 export interface NetWorth { savings: number; cardDebt: number; futureDebt: number; loanDebt: number; netWorth: number }
@@ -66,13 +68,32 @@ async function call<T>(url: string, body?: unknown): Promise<T> {
 const fn = (resource: string) => `/.netlify/functions/api?resource=${resource}`;
 
 export type AccountFields = Partial<Pick<Account, 'name' | 'owner' | 'balance' | 'cutoff_day' | 'due_day' | 'logo_url'>>;
-export type NewTransaction = Omit<Transaction, 'id'>;
+export type Frequency = 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly' | 'yearly';
+export interface Plan { id: string; kind: 'installment' | 'recurring'; account_id: string; person: Person; amount: number; description: string; category: string; start_date: string; frequency: Frequency; end_date: string; count: number | ''; active: boolean; legacy_ids?: string; next_date?: string }
+export interface Goal { id: string; account_id: string; name: string; target: number; saved: number; archived?: boolean }
+export type NewTransaction = Omit<Transaction, 'id'> & { installments?: number; recurring?: { frequency: Frequency; end_date?: string } };
+export type ImportRow = NewTransaction & { id?: string; include_duplicate?: boolean };
+export interface ImportPreview { index: number; transaction?: Transaction; duplicate: boolean; error: string }
+
 
 export const api = {
+  getPlans: () => call<{ plans: Plan[] }>(fn('plans')),
+  updatePlan: (plan: Plan, patch: { amount: number; next_date: string; remaining_count?: number; frequency?: Frequency; end_date?: string }) => call(fn('plans'), { ...patch, action: 'update', id: plan.id, previous: plan }),
+  stopPlan: (id: string) => call(fn('plans'), { action: 'stop', id }),
+  linkInstallments: (transaction_ids: string[], description: string) => call(fn('plans'), { action: 'link_installments', transaction_ids, description }),
+  getGoals: () => call<{ goals: Goal[] }>(fn('goals')),
+  saveGoal: (goal: Omit<Goal, 'id'> & { id?: string }) => call(fn('goals'), goal),
+  archiveGoal: (id: string) => call(fn('goals'), { action: 'archive', id }),
+  getSettings: () => call<{ names: Record<Person, string> }>(fn('settings')),
+  saveNames: (names: Record<Person, string>) => call<{ names: Record<Person, string> }>(fn('settings'), { names }),
+  adjustBalance: (account: Account, balance: number, person: Person, category: string) => call(fn('accounts'), { action: 'adjust_balance', id: account.id, previous_balance: Number(account.balance), balance, person, category }),
+  previewImport: (rows: ImportRow[]) => call<{ preview: ImportPreview[] }>(fn('transactions'), { action: 'import_preview', rows }),
+  importTransactions: (rows: ImportRow[]) => call<{ imported: number; skipped: number }>(fn('transactions'), { action: 'import', rows }),
   getAccounts: (month: string) =>
     call<{ accounts: Account[]; netWorthByView: Record<View, NetWorth>; historyByView: Record<View, NetWorthPoint[]>; spending: Spending }>(fn('accounts') + `&month=${month}`),
   getTransactions: () => call<{ transactions: Transaction[] }>(fn('transactions')),
   createTransaction: (payload: NewTransaction) => call(fn('transactions'), payload),
+  updateTransaction: (previous: Transaction, payload: NewTransaction) => call(fn('transactions'), { ...payload, action: 'update', id: previous.id, previous }),
   voidTransaction: (id: string) => call(fn('transactions'), { action: 'void', id }),
   createAccount: (payload: AccountFields & { type: AccountType }) => call(fn('accounts'), payload),
   updateAccount: (id: string, patch: AccountFields) => call(fn('accounts'), { action: 'update', id, patch }),

@@ -100,21 +100,51 @@ a `.env` file, and:
   automatically reduces its balance too.
 - **Savings tab**: add as many accounts as you want; balance is just
   income/transfers in minus expenses/transfers out.
-- **Transactions tab**: full history. "VOID" reverses an entry without
-  deleting the row (keeps your Sheet as an audit trail).
+- **Transactions tab**: edit the date, amount, description, person, category,
+  type, or accounts. Each edit keeps a voided copy of the previous version in
+  the Sheet, with a revision ID linked to the active entry. Edits and loan
+  balance corrections are saved in one Sheets batch. Void reverses an entry
+  without deleting it. Editing one installment charge leaves the rest alone.
+- **Insights tab**: choose Combined or an individual to filter charts and
+  tables. Shared-account activity follows the person tagged on the transaction.
 - **Dashboard**: live net worth = all savings − all credit card debt (billed
   + unbilled) − all loan balances.
 
 ## Notes & limitations
 
 - **No authentication** — same as before, anyone with the link can use it.
-- **No historical net worth trend** — this shows the live number only, per
-  what you asked for. Easy to add later (would need periodic snapshots
-  saved to a new sheet tab).
+- **Net worth history** is reconstructed from the ledger; loan history uses
+  today's manually maintained balance.
 - **Categories** for expenses are a fixed list in `src/lib/format.js`
   (`export const CATEGORIES = [...]`) — edit that array to change them.
-- **Editing a past transaction** isn't supported — void it and re-add it
-  correctly instead. Keeps the ledger math unambiguous.
+- **Individual views** exclude joint account balances; Combined includes all
+  active accounts. Transaction attribution still follows the tagged person.
 - Every balance is *calculated* from the transaction ledger (except loans,
   which are a manually-set field) — so the Sheet itself is always the
   source of truth. You can inspect it directly any time.
+
+## Household tools
+
+- In **Expense**, choose **Repeat this expense** and a frequency (daily,
+  weekly, fortnightly, monthly, quarterly, or yearly), with an optional end
+  date. Due entries catch up when the app opens, refreshes, or returns to the
+  foreground. This records activity in Tally; it does not make bank payments.
+- **Manage schedules** (calendar icon): see recurring expenses and installment
+  plans. Change future installment amounts, dates, and remaining counts, or
+  stop future entries. Already-posted entries stay intact. Use **Link existing
+  installment entries** to review and connect older imported charges.
+- **Transactions**: search and combine date, account, category, person, type,
+  and posted/scheduled filters. **Export filtered CSV** exports all matching
+  entries, including those beyond the displayed page. **Import CSV** supports
+  column mapping, ISO/US/day-first dates, signed amounts or debit/credit
+  columns, preview, and explicit duplicate inclusion. Import up to 1,000 rows
+  per batch. CSV exports contain the ledger, not goals/settings/plan metadata.
+- **Savings > Adjust balance** records the difference as income or an expense;
+  choose the person and expense category. It never overwrites ledger history.
+- **Savings goals** reserve money inside savings accounts without adding to
+  net worth. Combined reservations cannot exceed the account balance when
+  saved. If later spending reduces that balance, a shortfall warning appears.
+- **Household settings** (gear icon) saves both display names in Sheets. Stable
+  p1/p2 IDs preserve all transaction and account ownership links.
+- New Plans, Goals, and Settings tabs and two transaction metadata columns are
+  created automatically. Existing transaction columns and rows are retained.

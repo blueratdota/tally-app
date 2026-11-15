@@ -1,6 +1,6 @@
+import { usePeople } from '@/lib/household';
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { api, type Account, type AccountFields, type AccountType, type Owner } from '@/lib/api';
-import { PEOPLE } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ const LABELS: Record<AccountType, string> = { creditcard: 'credit card', loan: '
 interface Props { type: AccountType; account: Account | null; onClose: () => void; onSaved: (msg?: string) => void }
 
 export default function AccountModal({ type, account, onClose, onSaved }: Props) {
+  const PEOPLE = usePeople();
   const [name, setName] = useState(account?.name ?? '');
   const [owner, setOwner] = useState<Owner>(account?.owner || 'shared');
   const [cutoffDay, setCutoffDay] = useState(String(account?.cutoff_day ?? ''));
@@ -73,9 +74,9 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent className="bg-card max-w-[440px]">
-        <DialogHeader><DialogTitle className="font-display text-xl">{account ? 'Edit' : 'Add'} {LABELS[type]}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="font-display text-2xl tracking-tight">{account ? 'Edit' : 'Add'} {LABELS[type]}</DialogTitle></DialogHeader>
 
-        <form onSubmit={handleSubmit} className="grid gap-3">
+        <form onSubmit={handleSubmit} className="grid gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="name">Name</Label>
             <Input id="name" required placeholder="e.g. BPI Gold, Toyota Loan, Emergency Fund" value={name} onChange={e => setName(e.target.value)} />

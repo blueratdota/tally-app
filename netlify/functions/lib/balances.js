@@ -2,6 +2,11 @@
 // in the app. No network/sheet calls here, so this file can be unit-tested
 // in isolation (see test/balances.test.js).
 
+// Keep the household calendar consistent with peso accounts, including on UTC hosts.
+function householdToday(now = new Date()) {
+  return new Date(now.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) + 'T12:00:00');
+}
+
 function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -12,7 +17,7 @@ function daysInMonth(year, monthIndex) {
 
 // The most recent date matching `cutoffDay` that is on or before `today`.
 // Clamps to the actual last day of a short month (e.g. cutoffDay=31 in Feb).
-function lastCutoffDate(cutoffDay, today = new Date()) {
+function lastCutoffDate(cutoffDay, today = householdToday()) {
   const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
   const thisMonthCutoff = Math.min(cutoffDay, daysInMonth(y, m));
   if (d >= thisMonthCutoff) {
@@ -29,7 +34,7 @@ const isoDate = d => d.toLocaleDateString('en-CA');
 
 // Savings balance = every transaction that lands on or leaves this account.
 // Future-dated transactions (e.g. scheduled installments) don't count yet.
-function computeSavingsBalance(accountId, transactions, today = new Date()) {
+function computeSavingsBalance(accountId, transactions, today = householdToday()) {
   const todayStr = isoDate(today);
   let bal = 0;
   for (const t of transactions) {
@@ -44,7 +49,7 @@ function computeSavingsBalance(accountId, transactions, today = new Date()) {
 //  - current   = billed before the last cutoff, due on the upcoming due date
 //  - outstanding = spent after the last cutoff, not billed yet
 // Payments (transfers TO the card) pay down `current` first, then `outstanding`.
-function computeCreditCard(account, transactions, today = new Date()) {
+function computeCreditCard(account, transactions, today = householdToday()) {
   const cutoff = lastCutoffDate(account.cutoff_day, today);
   const todayStr = isoDate(today);
   const nextMonth = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 1)).slice(0, 7);
@@ -62,7 +67,7 @@ function computeCreditCard(account, transactions, today = new Date()) {
       if (d <= cutoff) billed += Number(t.amount);
       else unbilled += Number(t.amount);
     }
-    if (t.type === 'transfer' && t.to_account_id === account.id) {
+    if (t.type === 'transfer' && t.to_account_id === account.id && t.date <= todayStr) {
       paid += Number(t.amount);
     }
   }
@@ -86,7 +91,7 @@ function computeCreditCard(account, transactions, today = new Date()) {
   };
 }
 
-function computeNetWorth(accounts, transactions, today = new Date()) {
+function computeNetWorth(accounts, transactions, today = householdToday()) {
   let savings = 0, cardDebt = 0, loanDebt = 0, futureDebt = 0;
   for (const a of accounts) {
     if (a.archived) continue;
@@ -107,10 +112,11 @@ function computeNetWorth(accounts, transactions, today = new Date()) {
 }
 
 // Expenses in one month ('YYYY-MM'), totalled per person and per category.
-function monthlySpending(transactions, month) {
+function monthlySpending(transactions, month, today = householdToday()) {
+  const todayStr = isoDate(today);
   const out = { total: 0, p1: { total: 0, categories: {} }, p2: { total: 0, categories: {} } };
   for (const t of transactions) {
-    if (t.voided || t.type !== 'expense' || !String(t.date).startsWith(month)) continue;
+    if (t.voided || t.date > todayStr || t.type !== 'expense' || !String(t.date).startsWith(month)) continue;
     const p = out[t.person];
     const amt = Number(t.amount);
     out.total += amt;
@@ -127,7 +133,7 @@ function monthlySpending(transactions, month) {
 
 // Net worth at the end of each of the last `months` months (the current month ends today).
 // ponytail: loans have no history (stored balance), so every point uses today's loan balance.
-function netWorthHistory(accounts, transactions, months = 12, today = new Date()) {
+function netWorthHistory(accounts, transactions, months = 12, today = householdToday()) {
   const out = [];
   for (let i = months - 1; i >= 0; i--) {
     const end = i === 0 ? today : new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
@@ -137,6 +143,7 @@ function netWorthHistory(accounts, transactions, months = 12, today = new Date()
 }
 
 module.exports = {
+  householdToday,
   monthlySpending,
   netWorthHistory,
   round2,

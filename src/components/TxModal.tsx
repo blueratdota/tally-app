@@ -1,12 +1,14 @@
+import { usePeople } from '@/lib/household';
 import { useState, type FormEvent } from 'react';
-import { api, type Account, type NewTransaction, type Person, type TxType } from '@/lib/api';
-import { CATEGORIES, PEOPLE, localDate } from '@/lib/format';
+import { api, type Account, type NewTransaction, type Person, type TxType, type Transaction, type Frequency } from '@/lib/api';
+import { CATEGORIES, localDate, peso, FREQUENCIES } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Toggle } from '@/components/ui/toggle';
 
 const LAST_PERSON = 'tally-person';
 const lastPerson = () => { try { return (localStorage.getItem(LAST_PERSON) || '') as Person | ''; } catch { return ''; } };
@@ -22,6 +24,7 @@ function AccountSelect({ id, label, value, onChange, groups }: { id: string; lab
       <Select name={id} required value={value} onValueChange={onChange}>
         <SelectTrigger id={id}><SelectValue placeholder={nonEmpty.length ? 'Select account' : 'No accounts yet — add one first'} /></SelectTrigger>
         <SelectContent>
+          {value && !nonEmpty.some(([, list]) => list.some(a => a.id === value)) && <SelectItem value={value}>Archived account (unchanged)</SelectItem>}
           {nonEmpty.map(([g, list]) => (
             <SelectGroup key={g}>
               {groups.length > 1 && <SelectLabel>{g}</SelectLabel>}
@@ -34,15 +37,22 @@ function AccountSelect({ id, label, value, onChange, groups }: { id: string; lab
   );
 }
 
-export default function TxModal({ accounts, onClose, onSaved }: { accounts: Account[]; onClose: () => void; onSaved: () => void }) {
-  const [type, setType] = useState<TxType>('income');
-  const [date, setDate] = useState(localDate());
-  const [person, setPerson] = useState<Person | ''>(lastPerson());
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [fromAccount, setFromAccount] = useState('');
-  const [toAccount, setToAccount] = useState('');
+export default function TxModal({ accounts, transaction, onClose, onSaved }: { accounts: Account[]; transaction?: Transaction; onClose: () => void; onSaved: () => void }) {
+  const PEOPLE = usePeople();
+  const [type, setType] = useState<TxType>(transaction?.type || 'income');
+  const [installment, setInstallment] = useState(false);
+  const isInstallment = type === 'expense' && installment;
+  const [recurring, setRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [endDate, setEndDate] = useState('');
+  const [months, setMonths] = useState('12');
+  const [date, setDate] = useState(transaction?.date || localDate());
+  const [person, setPerson] = useState<Person | ''>(transaction ? transaction.person || '' : lastPerson());
+  const [amount, setAmount] = useState(String(transaction?.amount ?? ''));
+  const [description, setDescription] = useState(transaction?.description || '');
+  const [category, setCategory] = useState(transaction ? transaction.category || 'Other' : CATEGORIES[0]);
+  const [fromAccount, setFromAccount] = useState(transaction?.from_account_id || '');
+  const [toAccount, setToAccount] = useState(transaction?.to_account_id || '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -57,6 +67,8 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
     if (!person) { setError('Choose who this is for.'); return; }
     try { localStorage.setItem(LAST_PERSON, person); } catch { /* storage blocked */ }
     const payload: NewTransaction = { type, date, person, amount: parseFloat(amount), description: description.trim() };
+    if (isInstallment) payload.installments = Number(months);
+    if (type === 'expense' && recurring && !transaction) payload.recurring = { frequency, end_date: endDate };
     if (type === 'income') {
       payload.to_account_id = toAccount;
     } else if (type === 'expense') {
@@ -73,7 +85,8 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
 
     setSaving(true);
     try {
-      await api.createTransaction(payload);
+      if (transaction) await api.updateTransaction(transaction, payload);
+      else await api.createTransaction(payload);
       onSaved();
     } catch (err) {
       setError((err as Error).message);
@@ -84,40 +97,75 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
 
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
-      <DialogContent className="bg-card max-w-[440px]">
-        <DialogHeader><DialogTitle className="font-display text-xl">Record transaction</DialogTitle></DialogHeader>
+      <DialogContent className="bg-card max-w-[520px]">
+        <DialogHeader><DialogTitle className="font-display text-2xl tracking-tight">{transaction ? 'Edit transaction' : 'Record transaction'}</DialogTitle></DialogHeader>
 
-        <ToggleGroup type="single" variant="outline" value={type} onValueChange={v => v && setType(v as TxType)} className="grid grid-cols-3">
+        {transaction && <p className="text-xs text-muted-foreground">Only this transaction will change. Its previous version stays in your ledger for audit history.</p>}
+        <ToggleGroup type="single" variant="outline" value={type} onValueChange={v => { if (v) { setType(v as TxType); setInstallment(false); setRecurring(false); setFromAccount(''); setToAccount(''); setError(''); } }} aria-label="Transaction type" className="grid grid-cols-3 rounded-2xl bg-muted p-1">
           {(['income', 'expense', 'transfer'] as const).map(t => (
-            <ToggleGroupItem key={t} value={t} className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+            <ToggleGroupItem key={t} value={t} disabled={!!transaction?.plan_id && t !== 'expense'} className="rounded-xl border-0 shadow-none data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
               {t[0].toUpperCase() + t.slice(1)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
 
-        <form onSubmit={handleSubmit} className="grid gap-3">
+        <form onSubmit={handleSubmit} className="grid min-w-0 gap-4">
+          {type === 'expense' && !transaction && (
+            <Toggle variant="outline" pressed={installment} onPressedChange={v => {
+              setInstallment(v);
+              if (v) setRecurring(false);
+              if (v && !cards.some(a => a.id === fromAccount)) setFromAccount('');
+              setError('');
+            }} className="group h-12 w-full justify-between rounded-xl bg-muted/50 px-3">
+              <span>Pay in installments</span>
+              <span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full bg-muted-foreground/30 group-data-[state=on]:bg-primary">
+                <span className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform group-data-[state=on]:translate-x-4" />
+              </span>
+            </Toggle>
+          )}
+          {type === 'expense' && !transaction && <Toggle variant="outline" pressed={recurring} onPressedChange={v => { setRecurring(v); if (v) setInstallment(false); }} className="group h-12 w-full justify-between rounded-xl bg-muted/50 px-3">
+            <span>Repeat this expense</span><span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full bg-muted-foreground/30 group-data-[state=on]:bg-primary"><span className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform group-data-[state=on]:translate-x-4" /></span>
+          </Toggle>}
           <div className="grid gap-1.5">
-            <Label>Who</Label>
-            <ToggleGroup type="single" variant="outline" value={person} onValueChange={v => v && setPerson(v as Person)} className="grid grid-cols-2">
+            <Label id="tx-who">Who</Label>
+            <ToggleGroup type="single" variant="outline" aria-labelledby="tx-who" value={person} onValueChange={v => v && setPerson(v as Person)} className="grid grid-cols-2 rounded-2xl bg-muted p-1">
               {(Object.entries(PEOPLE) as [Person, string][]).map(([id, name]) => (
-                <ToggleGroupItem key={id} value={id} className="data-[state=on]:bg-foreground data-[state=on]:text-background">{name}</ToggleGroupItem>
+                <ToggleGroupItem key={id} value={id} className="rounded-xl border-0 shadow-none data-[state=on]:bg-foreground data-[state=on]:text-background"><span className="truncate">{name}</span></ToggleGroupItem>
               ))}
             </ToggleGroup>
           </div>
-          <div className="grid gap-1.5"><Label htmlFor="date">Date</Label><Input id="date" type="date" required value={date} onChange={e => setDate(e.target.value)} /></div>
-          <div className="grid gap-1.5"><Label htmlFor="amount">Amount (₱)</Label><Input id="amount" inputMode="decimal" type="number" step="0.01" min="0.01" required placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-1.5"><Label htmlFor="date">{isInstallment || recurring ? 'First charge date' : 'Date'}</Label><Input id="date" type="date" required value={date} onChange={e => setDate(e.target.value)} /></div>
+            <div className="grid min-w-0 gap-1.5"><Label htmlFor="amount">{isInstallment ? 'Total amount (₱)' : recurring ? 'Amount per charge (₱)' : 'Amount (₱)'}</Label><Input id="amount" inputMode="decimal" type="number" step="0.01" min={type === 'expense' && !isInstallment && !recurring ? undefined : '0.01'} required placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} /></div>
+          </div>
+          {recurring && <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-1.5"><Label htmlFor="frequency">Frequency</Label><Select value={frequency} onValueChange={v => setFrequency(v as Frequency)}><SelectTrigger id="frequency"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(FREQUENCIES).map(([id, label]) => <SelectItem key={id} value={id}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-1.5"><Label htmlFor="end-date">End date (optional)</Label><Input id="end-date" type="date" min={date} value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">Due entries are recorded when the app refreshes, including missed charges. Manage or stop the schedule under Manage schedules.</p>
+          </div>}
+          {isInstallment && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="months">Number of monthly charges</Label>
+              <Input id="months" type="number" inputMode="numeric" min="2" max="120" step="1" required value={months} onChange={e => setMonths(e.target.value)} aria-describedby="installment-note" />
+              <p id="installment-note" className="text-xs text-muted-foreground">
+                {Number(amount) > 0 && Number(months) >= 2 && Number.isInteger(Number(months))
+                  ? `About ${peso(Number(amount) / Number(months))} per month. The final charge adjusts for rounding. ` : ''}
+                Enter the full total including any interest or fees. Future charges appear under upcoming installments.
+              </p>
+            </div>
+          )}
           <div className="grid gap-1.5"><Label htmlFor="desc">Description</Label><Input id="desc" required placeholder="e.g. Salary, Grocery run, Card payment" value={description} onChange={e => setDescription(e.target.value)} /></div>
 
           {type === 'income' && <AccountSelect id="to" label="Deposit into" value={toAccount} onChange={setToAccount} groups={[['Savings', savings]]} />}
 
           {type === 'expense' && (
             <>
-              <AccountSelect id="from" label="Charge to" value={fromAccount} onChange={setFromAccount} groups={[['Savings', savings], ['Credit card', cards]]} />
+              <AccountSelect id="from" label="Charge to" value={fromAccount} onChange={setFromAccount} groups={isInstallment ? [['Credit card', cards]] : [['Savings', savings], ['Credit card', cards]]} />
               <div className="grid gap-1.5">
                 <Label htmlFor="category">Category</Label>
                 <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger id="category"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{(CATEGORIES.includes(category) ? CATEGORIES : [category, ...CATEGORIES]).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </>
@@ -130,9 +178,9 @@ export default function TxModal({ accounts, onClose, onSaved }: { accounts: Acco
             </>
           )}
 
-          {error && <div className="text-destructive text-xs">{error}</div>}
+          {error && <div role="alert" className="text-destructive text-sm">{error}</div>}
 
-          <Button type="submit" disabled={saving} className="w-full mt-1">{saving ? 'Saving…' : 'Save'}</Button>
+          <Button type="submit" disabled={saving} className="w-full mt-1">{saving ? 'Saving…' : transaction ? 'Save changes' : isInstallment ? 'Schedule installments' : recurring ? 'Save recurring expense' : 'Save'}</Button>
         </form>
       </DialogContent>
     </Dialog>

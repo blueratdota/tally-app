@@ -2,65 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tally palette as shadcn/ui tokens (HSL channels). */
 @layer base {
   :root {
-    --background: 218 29% 95%;      /* ground  #EDF0F5 */
-    --foreground: 220 55% 13%;      /* ink     #0F1B33 */
+    --background: 40 23% 97%;
+    --foreground: 165 24% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 220 55% 13%;
+    --card-foreground: 165 24% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 55% 13%;
-    --primary: 220 100% 33%;        /* blue    #0038A8 */
+    --popover-foreground: 165 24% 13%;
+    --primary: 164 57% 25%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 218 29% 95%;
-    --secondary-foreground: 220 55% 13%;
-    --muted: 218 29% 95%;
-    --muted-foreground: 218 14% 42%; /* #5B6679 */
-    --accent: 218 29% 91%;
-    --accent-foreground: 220 55% 13%;
-    --destructive: 350 85% 42%;     /* red     #C8102E */
+    --secondary: 150 16% 94%;
+    --secondary-foreground: 165 24% 20%;
+    --muted: 150 12% 95%;
+    --muted-foreground: 160 7% 43%;
+    --accent: 150 22% 92%;
+    --accent-foreground: 164 57% 25%;
+    --destructive: 8 64% 44%;
     --destructive-foreground: 0 0% 100%;
-    --border: 218 22% 86%;          /* line    #D3D9E3 */
-    --input: 218 22% 86%;
-    --ring: 220 100% 33%;
-    --radius: 0.5rem;
+    --border: 150 12% 89%;
+    --input: 150 12% 87%;
+    --ring: 164 57% 25%;
+    --radius: 0.875rem;
+    --toast-bottom: calc(9.5rem + env(safe-area-inset-bottom));
   }
   * { @apply border-border; }
-  body { @apply bg-background text-foreground font-sans antialiased; font-variant-numeric: tabular-nums; min-height: 100vh; min-height: 100dvh; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-variant-numeric: tabular-nums;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  ::selection { background: #d6efbd; color: #183e32; }
 }
 
-/* Keep controls clear of iPhone cutouts and the home indicator in either orientation. */
 .app-shell {
   padding-top: max(1.25rem, env(safe-area-inset-top));
-  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(11rem + env(safe-area-inset-bottom));
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
 }
+.brand-mark { @apply flex size-10 shrink-0 items-center justify-center rounded-2xl bg-foreground text-white; }
+.app-nav {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 30;
+  padding: 0.5rem max(0.25rem, env(safe-area-inset-right)) calc(0.5rem + env(safe-area-inset-bottom)) max(0.25rem, env(safe-area-inset-left));
+  border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.96);
+  backdrop-filter: blur(16px);
+}
 .record-transaction {
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  left: max(1rem, env(safe-area-inset-left));
+  position: fixed;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
   right: max(1rem, env(safe-area-inset-right));
+  z-index: 20;
+  box-shadow: 0 8px 24px #1b60432b;
+}
+.balance-hero { background: #173f35; }
+.balance-hero::after {
+  content: '';
+  position: absolute;
+  width: 22rem;
+  height: 22rem;
+  right: -10rem;
+  top: -9rem;
+  border: 1px solid #ffffff15;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3rem #ffffff06, 0 0 0 6rem #ffffff04;
+  pointer-events: none;
 }
 @media (min-width: 640px) {
-  .app-shell { padding-left: max(1.5rem, env(safe-area-inset-left)); padding-right: max(1.5rem, env(safe-area-inset-right)); }
-  .record-transaction { left: auto; }
+  :root { --toast-bottom: 1.5rem; }
+  .app-shell { padding: 2rem max(1.5rem, env(safe-area-inset-right)) 3rem max(1.5rem, env(safe-area-inset-left)); }
+  .app-nav { position: static; border: 0; background: transparent; padding: 0; backdrop-filter: none; }
+  .record-transaction { position: static; box-shadow: none; }
 }
-/* iPad also needs 16px fields to avoid Safari zooming when a field receives focus. */
+input[type="date"] { appearance: none; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+input[type="date"]::-webkit-calendar-picker-indicator { margin-left: auto; }
 @media (pointer: coarse) {
   input, select, textarea { font-size: 16px !important; }
 }
-
-.receipt-torn {
-  height: 14px;
-  background:
-    linear-gradient(135deg, hsl(var(--background)) 50%, transparent 50%) 0 0 / 16px 16px repeat-x,
-    linear-gradient(-135deg, hsl(var(--background)) 50%, transparent 50%) 0 0 / 16px 16px repeat-x;
-  background-color: hsl(var(--card));
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
-.receipt-torn.flip { transform: rotate(180deg); }
-
-/* accounting total: a thick rule over a thin one */
-.double-rule { border-bottom: 4px double hsl(var(--foreground)); }
-
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
