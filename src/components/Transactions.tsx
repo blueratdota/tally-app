@@ -55,7 +55,7 @@ function cardCycle(cutoffDay: number, today: string) {
 }
 const dayAfter = (d: string) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + 1); return x.toLocaleDateString('en-CA'); };
 const shortDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-const charges = (txs: Transaction[]) => txs.reduce((n, t) => n + (t.type === 'expense' ? Number(t.amount) : 0), 0);
+const charges = (txs: Transaction[], cardId: string) => txs.reduce((n, t) => n + (t.type !== 'income' && t.from_account_id === cardId ? Number(t.amount) : 0), 0);
 
 function TxBlock({ title, note, txs, accountName, onVoid, onEdit, byDate }: { title: string; note?: ReactNode; txs: Transaction[]; byDate?: boolean; accountName: AccountName; onVoid: (id: string) => void; onEdit: (t: Transaction) => void }) {
   const [limit, setLimit] = useState(100);
@@ -156,7 +156,7 @@ export default function Transactions({ initialAccount, transactions, allTransact
           ];
           const blocks = sections.map(([title, note, inRange]) => [title, note, filtered.filter(t => inRange(t.date))] as const).filter(([, , txs]) => txs.length);
           return blocks.length
-            ? blocks.map(([title, note, txs]) => <TxBlock key={title} byDate title={title} note={<>{note} · Charges {peso(charges(txs))}</>} txs={txs} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />)
+            ? blocks.map(([title, note, txs]) => <TxBlock key={title} byDate title={title} note={<>{note} · Charges {peso(charges(txs, card.id))}</>} txs={txs} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />)
             : <TxBlock title={card.name} txs={[]} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />;
         })() : <>
         <TxBlock title="All activity" byDate txs={filtered.filter(t => !isInstallment(t))} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />

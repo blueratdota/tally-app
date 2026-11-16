@@ -206,8 +206,8 @@ export default function TxModal({ accounts, history, transaction, onClose, onSav
 
           {type === 'transfer' && (
             <>
-              <AccountSelect id="from" label="From (savings)" value={fromAccount} onChange={setFromAccount} groups={[['Savings', savings]]} />
-              <AccountSelect id="to" label="To" value={toAccount} onChange={setToAccount} groups={[['Savings', savings], ['Credit card', cards], ['Loan', loans]]} />
+              <AccountSelect id="from" label="From" value={fromAccount} onChange={v => { setFromAccount(v); if (cards.some(a => a.id === v) && !loans.some(a => a.id === toAccount)) setToAccount(''); }} groups={[['Savings', savings], ['Credit card (loan payments only)', cards]]} />
+              <AccountSelect id="to" label="To" value={toAccount} onChange={setToAccount} groups={cards.some(a => a.id === fromAccount) ? [['Loan', loans]] : [['Savings', savings], ['Credit card', cards], ['Loan', loans]]} />
             </>
           )}
 

@@ -242,9 +242,11 @@ function validateTransaction(body, accounts, original) {
     const validAccount = (field, types) => accounts.some(a => a.id === body[field] && types.includes(a.type) && (!a.archived || original?.[field] === a.id));
     if (type === 'income' && !validAccount('to_account_id', ['savings'])) throw userError('Income needs a savings account');
     if (type === 'expense' && !validAccount('from_account_id', ['savings', 'creditcard'])) throw userError('Expense needs a savings account or credit card');
-    if (type === 'transfer' && (!validAccount('from_account_id', ['savings']) || !validAccount('to_account_id', VALID_TYPES) || body.from_account_id === body.to_account_id)) {
+    if (type === 'transfer' && (!validAccount('from_account_id', ['savings', 'creditcard']) || !validAccount('to_account_id', VALID_TYPES) || body.from_account_id === body.to_account_id)) {
       throw userError('Transfer needs different valid source and destination accounts');
     }
+    // A card can pay a loan directly (e.g. buying things for the lender); it is charged like an expense.
+    if (type === 'transfer' && validAccount('from_account_id', ['creditcard']) && !validAccount('to_account_id', ['loan'])) throw userError('A credit card can only transfer to a loan');
     if (type === 'transfer' && date > todayISO() && accounts.some(a => a.id === body.to_account_id && a.type === 'loan')) throw userError('Loan payments cannot be dated in the future');
 
     return {

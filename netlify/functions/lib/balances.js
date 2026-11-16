@@ -58,7 +58,8 @@ function computeCreditCard(account, transactions, today = householdToday()) {
 
   for (const t of transactions) {
     if (t.voided) continue;
-    if (t.type === 'expense' && t.from_account_id === account.id) {
+    // Transfers out of a card (loan payments charged to it) are card charges too.
+    if ((t.type === 'expense' || t.type === 'transfer') && t.from_account_id === account.id) {
       if (t.date > todayStr) { // scheduled ahead (installments): tracked apart from today's debt
         future += Number(t.amount);
         if (t.date.startsWith(nextMonth)) dueNextMonth += Number(t.amount);

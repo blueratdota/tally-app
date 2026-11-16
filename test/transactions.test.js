@@ -146,6 +146,14 @@ const edit = (previous, patch = {}) => post({ ...previous, ...patch, action: 'up
   const transfer = await post({ type: 'transfer', date: today, amount: 1, description: 'Move', category: 'Salary', from_account_id: 's', to_account_id: 's2', person: 'p1' });
   assert.equal(transfer.statusCode, 200, transfer.body);
   assert.equal(JSON.parse(transfer.body).transaction.category, '', 'transfers carry no category');
+  // A card can pay a loan directly: the loan drops, the card owes more, and it is not spending.
+  const cardDebt = async () => computeCreditCard({ id: 'cc', cutoff_day: 15 }, await sheets.listTransactions()).total;
+  const [loanBefore, cardBefore, spentBefore] = [loan('l2'), await cardDebt(), monthlySpending(await sheets.listTransactions(), today.slice(0, 7)).total];
+  assert.equal((await post({ type: 'transfer', date: today, amount: 30, description: 'Groceries for lender', from_account_id: 'cc', to_account_id: 'l2', person: 'p1' })).statusCode, 200);
+  assert.equal(loan('l2'), loanBefore - 30);
+  assert.equal(await cardDebt(), cardBefore + 30);
+  assert.equal(monthlySpending(await sheets.listTransactions(), today.slice(0, 7)).total, spentBefore);
+  assert.equal((await post({ type: 'transfer', date: today, amount: 30, description: 'Card to card', from_account_id: 'cc', to_account_id: 's', person: 'p1' })).statusCode, 400);
 
   const recurring = await post({ type: 'expense', date: today, amount: 49.95, description: 'Monthly subscription', category: 'Subscription', from_account_id: 's', person: 'p1', recurring: { frequency: 'monthly' } });
   assert.equal(recurring.statusCode, 200);
