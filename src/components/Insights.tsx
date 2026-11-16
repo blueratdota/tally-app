@@ -23,6 +23,34 @@ const short = (n: number) => {
   return a >= 1e6 ? s + (a / 1e6).toFixed(1) + 'M' : a >= 1e3 ? s + Math.round(a / 1e3) + 'k' : s + Math.round(a);
 };
 
+// Insights can be bucketed by day, week (Monday start), month or year. Keys sort as strings.
+export type Period = 'day' | 'week' | 'month' | 'year';
+const PERIODS: Record<Period, { label: string; count: number; now: string; unit: string; column: string }> = {
+  day: { label: 'Daily', count: 14, now: 'Today', unit: 'days', column: 'Day' },
+  week: { label: 'Weekly', count: 12, now: 'This week', unit: 'weeks', column: 'Week' },
+  month: { label: 'Monthly', count: 12, now: 'This month', unit: 'months', column: 'Month' },
+  year: { label: 'Yearly', count: 5, now: 'This year', unit: 'years', column: 'Year' },
+};
+const iso = (d: Date) => d.toLocaleDateString('en-CA');
+const day = (s: string) => new Date(s + 'T00:00:00');
+function keyOf(date: string, p: Period) {
+  if (p === 'day') return date;
+  if (p === 'month') return date.slice(0, 7);
+  if (p === 'year') return date.slice(0, 4);
+  const d = day(date); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d);
+}
+function shift(key: string, p: Period, n: number) {
+  if (p === 'month') return addMonths(key, n);
+  if (p === 'year') return String(Number(key) + n);
+  const d = day(key); d.setDate(d.getDate() + n * (p === 'week' ? 7 : 1)); return iso(d);
+}
+function labelOf(key: string, p: Period, long = false) {
+  if (p === 'year') return key;
+  if (p === 'month') return monthLabel(key, long);
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', ...(long && { year: 'numeric' }), ...(long && p === 'day' && { weekday: 'short' }) };
+  return (long && p === 'week' ? 'Week of ' : '') + day(key).toLocaleDateString('en-PH', opts);
+}
+
 function yScale(vals: number[]) {
   let lo = Math.min(...vals), hi = Math.max(...vals);
   if (lo === hi) { lo -= 1; hi += 1; }
@@ -103,9 +131,9 @@ function NetWorthChart({ history }: { history: NetWorthPoint[] }) {
   );
 }
 
-interface MonthRow { month: string; income: number; spent: number }
+interface PeriodRow { key: string; income: number; spent: number }
 
-function CashflowChart({ rows }: { rows: MonthRow[] }) {
+function CashflowChart({ rows, period }: { rows: PeriodRow[]; period: Period }) {
   const [hover, setHover] = useState<number | null>(null);
   const { y, ticks } = yScale([0, ...rows.flatMap(r => [r.income, r.spent])]);
   const slot = (W - PAD.l - PAD.r) / rows.length;
@@ -125,11 +153,12 @@ function CashflowChart({ rows }: { rows: MonthRow[] }) {
         </div>
       </div>
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Monthly income and spending, last 12 months" onPointerLeave={() => setHover(null)}>
-          <Axes ticks={ticks} y={y} labels={rows.map((r, i) => [i % 2 === rows.length % 2 ? '' : monthLabel(r.month), PAD.l + slot * (i + 0.5)] as [string, number]).filter(l => l[0])} />
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`${PERIODS[period].label} income and spending, last ${rows.length} ${PERIODS[period].unit}`} onPointerLeave={() => setHover(null)}>
+          {/* At most ~6 axis labels, always including the latest bucket. */}
+          <Axes ticks={ticks} y={y} labels={rows.map((r, i) => [(rows.length - 1 - i) % Math.ceil(rows.length / 6) === 0 ? labelOf(r.key, period) : '', PAD.l + slot * (i + 0.5)] as [string, number]).filter(l => l[0])} />
           {rows.map((r, i) => {
             const cx = PAD.l + slot * (i + 0.5);
-            return <g key={r.month} opacity={hover === null || hover === i ? 1 : 0.45}>
+            return <g key={r.key} opacity={hover === null || hover === i ? 1 : 0.45}>
               {bar(r.income, cx - bw - 1, BLUE)}
               {bar(r.spent, cx + 1, ORANGE)}
               <rect x={PAD.l + slot * i} y={PAD.t} width={slot} height={H - PAD.t - PAD.b} fill="transparent" onPointerEnter={() => setHover(i)} />
@@ -139,7 +168,7 @@ function CashflowChart({ rows }: { rows: MonthRow[] }) {
         </svg>
         {h && hover !== null && (
           <Tooltip left={PAD.l + slot * (hover + 0.5)}>
-            <div className="text-muted-foreground">{monthLabel(h.month, true)}</div>
+            <div className="text-muted-foreground">{labelOf(h.key, period, true)}</div>
             <div>Income <span className="font-semibold">{peso(h.income)}</span></div>
             <div>Spent <span className="font-semibold">{peso(h.spent)}</span></div>
           </Tooltip>
@@ -152,19 +181,19 @@ function CashflowChart({ rows }: { rows: MonthRow[] }) {
 const th = 'bg-muted/50 px-4 py-3 text-left font-semibold text-muted-foreground text-[11px]';
 const td = 'px-4 py-3 text-right whitespace-nowrap';
 
-function MonthTable({ rows }: { rows: MonthRow[] }) {
+function PeriodTable({ rows, period }: { rows: PeriodRow[]; period: Period }) {
   return (
-    <Card className="overflow-x-auto" tabIndex={0} role="region" aria-label="Monthly cash flow; scroll for more columns">
+    <Card className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${PERIODS[period].label} cash flow; scroll for more columns`}>
       <table className="w-full min-w-[540px] text-sm">
         <thead className="border-b"><tr>
-          <th className={th}>Month</th><th className={cn(th, 'text-right')}>Income</th><th className={cn(th, 'text-right')}>Spent</th>
+          <th className={th}>{PERIODS[period].column}</th><th className={cn(th, 'text-right')}>Income</th><th className={cn(th, 'text-right')}>Spent</th>
           <th className={cn(th, 'text-right')}>Net</th><th className={cn(th, 'text-right')}>Kept</th>
         </tr></thead>
         <tbody className="divide-y">
           {[...rows].reverse().map(r => {
             const net = r.income - r.spent;
-            return <tr key={r.month}>
-              <td className="px-3 py-2 whitespace-nowrap">{monthLabel(r.month, true)}</td>
+            return <tr key={r.key}>
+              <td className="px-3 py-2 whitespace-nowrap">{labelOf(r.key, period, true)}</td>
               <td className={td}>{peso(r.income)}</td>
               <td className={td}>{peso(r.spent)}</td>
               <td className={cn(td, 'font-medium', net < 0 ? 'text-destructive' : 'text-primary')}>{peso(net)}</td>
@@ -177,22 +206,22 @@ function MonthTable({ rows }: { rows: MonthRow[] }) {
   );
 }
 
-function CategoryTable({ transactions, month, view }: { transactions: Transaction[]; month: string; view: View }) {
+function CategoryTable({ transactions, current, period, view }: { transactions: Transaction[]; current: string; period: Period; view: View }) {
   const PEOPLE = usePeople(); const style = useCategoryStyle();
-  const prev = [1, 2, 3].map(n => addMonths(month, -n));
+  const prev = [1, 2, 3].map(n => shift(current, period, -n));
   const now: Record<string, number> = {}, avg: Record<string, number> = {};
   const byPerson: Record<string, Record<string, number>> = {};
   for (const t of transactions) {
     if (t.type !== 'expense') continue;
-    const m = t.date.slice(0, 7), c = t.category || 'Other', a = Number(t.amount);
-    if (m === month) {
+    const m = keyOf(t.date, period), c = t.category || 'Other', a = Number(t.amount);
+    if (m === current) {
       now[c] = (now[c] || 0) + a;
       if (t.person) (byPerson[c] ||= {})[t.person] = (byPerson[c][t.person] || 0) + a;
     } else if (prev.includes(m)) avg[c] = (avg[c] || 0) + a / 3;
   }
   const cats = Object.keys({ ...now, ...avg }).sort((a, b) => (now[b] || 0) - (now[a] || 0) || (avg[b] || 0) - (avg[a] || 0));
   const max = Math.max(1, ...cats.map(c => Math.max(now[c] || 0, avg[c] || 0)));
-  if (!cats.length) return <Card className="p-4 text-sm text-muted-foreground">No expenses in the last four months.</Card>;
+  if (!cats.length) return <Card className="p-4 text-sm text-muted-foreground">No expenses in the last four {PERIODS[period].unit}.</Card>;
   return (
     <Card className="overflow-x-auto" tabIndex={0} role="region" aria-label="Spending categories; scroll for more columns">
       {/* Phones show category, bar, this month and change; the per-person and average columns appear from sm up. */}
@@ -200,9 +229,9 @@ function CategoryTable({ transactions, month, view }: { transactions: Transactio
         <thead className="border-b"><tr>
           <th className={th}>Category</th>
           <th className={cn(th, 'w-[22%] sm:w-[40%]')}><span className="sr-only">Bar</span></th>
-          <th className={cn(th, 'text-right')}>This month</th>
+          <th className={cn(th, 'text-right')}>{PERIODS[period].now}</th>
           {view === 'all' && <th className={cn(th, 'hidden text-right sm:table-cell')}>{PEOPLE.p1} / {PEOPLE.p2}</th>}
-          <th className={cn(th, 'hidden text-right sm:table-cell')}>3-mo avg</th>
+          <th className={cn(th, 'hidden text-right sm:table-cell')}>3-{PERIODS[period].column.toLowerCase()} avg</th>
           <th className={cn(th, 'text-right')}>vs avg</th>
         </tr></thead>
         <tbody className="divide-y">
@@ -226,18 +255,20 @@ function CategoryTable({ transactions, month, view }: { transactions: Transactio
           })}
         </tbody>
       </table>
-      <p className="text-xs text-muted-foreground px-3 py-2 border-t">Bar: this month so far. Tick: average of the previous three months.</p>
+      <p className="text-xs text-muted-foreground px-3 py-2 border-t">Bar: {PERIODS[period].now.toLowerCase()} so far. Tick: average of the previous three {PERIODS[period].unit}.</p>
     </Card>
   );
 }
 
 export default function Insights({ transactions, history, view, onViewChange }: { transactions: Transaction[]; history: NetWorthPoint[]; view: View; onViewChange: (view: View) => void }) {
   const PEOPLE = usePeople();
-  const month = localDate().slice(0, 7);
-  const rows: MonthRow[] = Array.from({ length: 12 }, (_, i) => ({ month: addMonths(month, i - 11), income: 0, spent: 0 }));
-  const idx = Object.fromEntries(rows.map((r, i) => [r.month, i]));
+  const [period, setPeriod] = useState<Period>('month');
+  const { count, now } = PERIODS[period];
+  const current = keyOf(localDate(), period);
+  const rows: PeriodRow[] = Array.from({ length: count }, (_, i) => ({ key: shift(current, period, i - count + 1), income: 0, spent: 0 }));
+  const idx = Object.fromEntries(rows.map((r, i) => [r.key, i]));
   for (const t of transactions) {
-    const r = rows[idx[t.date.slice(0, 7)]];
+    const r = rows[idx[keyOf(t.date, period)]];
     if (!r) continue;
     if (t.type === 'income') r.income += Number(t.amount);
     else if (t.type === 'expense') r.spent += Number(t.amount);
@@ -249,18 +280,21 @@ export default function Insights({ transactions, history, view, onViewChange }: 
       <ToggleGroup type="single" value={view} onValueChange={v => v && onViewChange(v as View)} aria-label="Insights view" className="grid grid-cols-3 rounded-2xl bg-muted p-1 sm:max-w-md">
         {([['all', 'Combined'], ...Object.entries(PEOPLE)] as [View, string][]).map(([id, name]) => <ToggleGroupItem key={id} value={id} className="min-w-0 rounded-xl px-2 text-xs data-[state=on]:bg-foreground data-[state=on]:text-white"><span className="truncate">{name}</span></ToggleGroupItem>)}
       </ToggleGroup>
-      <section aria-label="Individual monthly summaries" className="space-y-3">
+      <ToggleGroup type="single" value={period} onValueChange={v => v && setPeriod(v as Period)} aria-label="Group insights by" className="grid grid-cols-4 rounded-2xl bg-muted p-1 sm:max-w-md">
+        {(Object.entries(PERIODS) as [Period, typeof PERIODS[Period]][]).map(([id, { label }]) => <ToggleGroupItem key={id} value={id} className="min-w-0 rounded-xl px-2 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">{label}</ToggleGroupItem>)}
+      </ToggleGroup>
+      <section aria-label={`Individual summaries, ${now.toLowerCase()}`} className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="min-w-0 max-w-full break-words text-lg font-bold tracking-tight">This month{view === 'all' ? ', by person' : ` · ${PEOPLE[view]}`}</h3>
+          <h3 className="min-w-0 max-w-full break-words text-lg font-bold tracking-tight">{now}{view === 'all' ? ', by person' : ` · ${PEOPLE[view]}`}</h3>
           {view !== 'all' && <Button variant="ghost" size="sm" onClick={() => onViewChange('all')}>Compare both people</Button>}
         </div>
         <p className="text-xs text-muted-foreground">Based on the person tagged on each transaction, including joint-account activity. Transfers are excluded.</p>
         <div className={cn('grid gap-4', view === 'all' && 'sm:grid-cols-2')}>
           {(Object.entries(PEOPLE) as [Person, string][]).filter(([id]) => view === 'all' || id === view).map(([id, name]) => {
-            const personal = transactions.filter(t => t.person === id && t.date.slice(0, 7) === month);
+            const personal = transactions.filter(t => t.person === id && keyOf(t.date, period) === current);
             const income = personal.filter(t => t.type === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
             const spent = personal.filter(t => t.type === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
-            return <Card key={id} role="region" aria-label={`${name} this month`} className="p-5 sm:p-6">
+            return <Card key={id} role="region" aria-label={`${name}, ${now.toLowerCase()}`} className="p-5 sm:p-6">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h4 className="min-w-0 flex-1 break-words text-sm font-bold">{name}</h4>
                 {view === 'all' && <Button variant="ghost" size="sm" className="text-primary" aria-label={`View insights for ${name}`} onClick={() => onViewChange(id)}>Details<ArrowUpRight aria-hidden="true" /></Button>}
@@ -276,16 +310,17 @@ export default function Insights({ transactions, history, view, onViewChange }: 
       </section>
       {history.length > 1 && <div className="space-y-2">
         <NetWorthChart key={view} history={history} />
+        {period !== 'month' && <p className="text-xs text-muted-foreground">Net worth is tracked at each month-end, so this chart stays monthly.</p>}
         {view !== 'all' && <p className="text-xs text-muted-foreground break-words">Only {PEOPLE[view]}'s own accounts are included. Joint accounts appear in Combined view.</p>}
       </div>}
       <section className="space-y-3">
-        <CashflowChart key={view} rows={rows} />
+        <CashflowChart key={view + period} rows={rows} period={period} />
         <p className="text-xs text-muted-foreground sm:hidden">Swipe tables sideways to see all columns.</p>
-        <MonthTable rows={rows} />
+        <PeriodTable rows={rows} period={period} />
       </section>
       <section>
         <h2 className="font-display text-lg font-semibold mb-2">Spending by category</h2>
-        <CategoryTable transactions={transactions} month={month} view={view} />
+        <CategoryTable transactions={transactions} current={current} period={period} view={view} />
       </section>
     </div>
   );
