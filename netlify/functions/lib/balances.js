@@ -76,7 +76,8 @@ function computeCreditCard(account, transactions, today = householdToday()) {
       }
       else unbilled += Number(t.amount);
     }
-    if (t.type === 'transfer' && t.to_account_id === account.id && t.date <= todayStr) {
+    // Payments (transfers) and credits recorded as income (refunds, rebates, cashback) both pay the card down.
+    if ((t.type === 'transfer' || t.type === 'income') && t.to_account_id === account.id && t.date <= todayStr) {
       paid += Number(t.amount);
     }
   }

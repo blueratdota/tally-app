@@ -238,6 +238,7 @@ function validateTransaction(body, accounts, original) {
     if (typeof description !== 'string' || !description.trim()) throw userError('Description is required');
     if (!PEOPLE.includes(body.person)) throw userError('Say who this transaction is for (p1 or p2)');
     if (body.category !== undefined && typeof body.category !== 'string') throw userError('Category must be text');
+    if (body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 1000)) throw userError('Notes must be text up to 1,000 characters');
     const validAccount = (field, types) => accounts.some(a => a.id === body[field] && types.includes(a.type) && (!a.archived || original?.[field] === a.id));
     if (type === 'income' && !validAccount('to_account_id', ['savings'])) throw userError('Income needs a savings account');
     if (type === 'expense' && !validAccount('from_account_id', ['savings', 'creditcard'])) throw userError('Expense needs a savings account or credit card');
@@ -252,13 +253,14 @@ function validateTransaction(body, accounts, original) {
       type,
       amount: amountCents / 100,
       description: description.trim(),
-      category: type === 'expense' ? body.category || '' : '',
+      category: type === 'transfer' ? '' : body.category || '',
       from_account_id: type === 'income' ? '' : body.from_account_id,
       to_account_id: type === 'expense' ? '' : body.to_account_id,
       voided: false,
       person: body.person,
       plan_id: original?.plan_id || '',
-      plan_index: original?.plan_index || ''
+      plan_index: original?.plan_index || '',
+      note: (body.note || '').trim()
     };
 }
 
@@ -344,14 +346,31 @@ async function handleGoals(event) {
 
 async function handleSettings(event) {
   const records = await sheetsDb.listRecords('Settings');
-  if (event.httpMethod === 'GET') return json(200, { success: true, names: Object.fromEntries(PEOPLE.map((p, i) => [p, records.find(r => r.id === p)?.value || `Person ${i + 1}`])) });
+  if (event.httpMethod === 'GET') {
+    let categories = {};
+    try { categories = JSON.parse(records.find(r => r.id === 'categories')?.value || '{}'); } catch { /* unreadable cell → defaults */ }
+    return json(200, { success: true, names: Object.fromEntries(PEOPLE.map((p, i) => [p, records.find(r => r.id === p)?.value || `Person ${i + 1}`])), categories });
+  }
   if (event.httpMethod !== 'POST') return json(405, { success: false, error: 'Method not allowed' });
   const body = JSON.parse(event.body || '{}');
   const names = Object.fromEntries(PEOPLE.map(p => [p, typeof body.names?.[p] === 'string' ? body.names[p].trim() : '']));
   if (PEOPLE.some(p => !names[p] || names[p].length > 40)) throw userError('Enter both names, up to 40 characters each');
   if (names.p1.toLowerCase() === names.p2.toLowerCase()) throw userError('Use different names so you can tell the people apart');
-  await sheetsDb.commit({ records: PEOPLE.map(id => ({ table: 'Settings', record: { id, value: names[id] } })) });
-  return json(200, { success: true, names });
+  const categories = validateCategoryStyles(body.categories ?? {});
+  await sheetsDb.commit({ records: [...PEOPLE.map(id => ({ table: 'Settings', record: { id, value: names[id] } })), { table: 'Settings', record: { id: 'categories', value: JSON.stringify(categories) } }] });
+  return json(200, { success: true, names, categories });
+}
+
+// { [category]: { emoji, color } } — only overrides of the client's defaults are stored.
+function validateCategoryStyles(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 100) throw userError('Category styles must be a list of up to 100 categories');
+  return Object.fromEntries(Object.entries(input).map(([name, style]) => {
+    if (!name.trim() || name.length > 40) throw userError('Category names must be 1–40 characters');
+    const emoji = typeof style?.emoji === 'string' ? style.emoji.trim() : '';
+    if ([...emoji].length > 8) throw userError(`Use a single emoji for ${name}`);
+    if (typeof style?.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(style.color)) throw userError(`Pick a color for ${name}`);
+    return [name, { emoji, color: style.color.toLowerCase() }];
+  }));
 }
 
 async function handleImport(body) {

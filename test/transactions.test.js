@@ -138,6 +138,15 @@ const edit = (previous, patch = {}) => post({ ...previous, ...patch, action: 'up
   const accountResult = await get('accounts');
   assert.deepEqual(accountResult.netWorthByView.p1, computeNetWorth((await sheets.listAccounts()).filter(a => a.owner === 'p1'), await sheets.listTransactions()), 'personal net worth must exclude all joint balances');
 
+  const income = await post({ type: 'income', date: today, amount: 100, description: 'Payday', category: 'Salary', to_account_id: 's', person: 'p1' });
+  assert.equal(JSON.parse(income.body).transaction.category, 'Salary', 'income keeps its category');
+  const noted = await post({ type: 'expense', date: today, amount: 5, description: 'Snack', category: 'Dining', from_account_id: 's', person: 'p1', note: '  shared with Ana \n second line ' });
+  assert.equal(JSON.parse(noted.body).transaction.note, 'shared with Ana \n second line', 'notes are saved, trimmed');
+  assert.equal((await post({ type: 'expense', date: today, amount: 5, description: 'x', from_account_id: 's', person: 'p1', note: 'n'.repeat(1001) })).statusCode, 400, 'overlong notes are refused');
+  const transfer = await post({ type: 'transfer', date: today, amount: 1, description: 'Move', category: 'Salary', from_account_id: 's', to_account_id: 's2', person: 'p1' });
+  assert.equal(transfer.statusCode, 200, transfer.body);
+  assert.equal(JSON.parse(transfer.body).transaction.category, '', 'transfers carry no category');
+
   const recurring = await post({ type: 'expense', date: today, amount: 49.95, description: 'Monthly subscription', category: 'Subscription', from_account_id: 's', person: 'p1', recurring: { frequency: 'monthly' } });
   assert.equal(recurring.statusCode, 200);
   const recurringPlan = JSON.parse(recurring.body).plan;
@@ -254,6 +263,11 @@ const edit = (previous, patch = {}) => post({ ...previous, ...patch, action: 'up
   assert.equal((await resourcePost('settings', { names: { p1: 'Alex', p2: 'Sam' } })).statusCode, 200);
   assert.deepEqual((await get('settings')).names, { p1: 'Alex', p2: 'Sam' });
   assert.equal((await resourcePost('settings', { names: { p1: 'Alex', p2: 'alex' } })).statusCode, 400);
+  const names = { p1: 'Alex', p2: 'Sam' };
+  assert.equal((await resourcePost('settings', { names, categories: { Dining: { emoji: '🍜', color: '#FF0000' } } })).statusCode, 200);
+  assert.deepEqual((await get('settings')).categories, { Dining: { emoji: '🍜', color: '#ff0000' } });
+  assert.equal((await resourcePost('settings', { names, categories: { Dining: { emoji: '🍜', color: 'red' } } })).statusCode, 400);
+  assert.equal((await resourcePost('settings', { names, categories: [] })).statusCode, 400);
   assert.equal((await read('income')).person, 'p1', 'renaming never changes ownership IDs');
   console.log('All plans, future-charge edits, goal reservations, balance adjustments, duplicate-reviewed imports, shared-balance exclusion, and saved-name checks passed.');
   console.log('All transaction edit, audit, loan correction, and atomic-write checks passed.');

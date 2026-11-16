@@ -1,4 +1,4 @@
-import { usePeople } from '@/lib/household';
+import { usePeople, useCategoryStyle, CategoryLabel } from '@/lib/household';
 import { peso, localDate } from '@/lib/format';
 import type { Account, AccountType, NetWorth, PersonSpending as PS, Spending, View } from '@/lib/api';
 import type { Page } from '@/App';
@@ -10,6 +10,7 @@ import { ArrowUpRight, Wallet, CreditCard, Landmark, CalendarDays } from 'lucide
 const dueText = (d: number) => d < 0 ? `${-d} ${d === -1 ? 'day' : 'days'} overdue` : d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`;
 
 function PersonSpending({ name, data }: { name: string; data: PS }) {
+  const style = useCategoryStyle();
   const top = Object.entries(data.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
   return (
     <Card className="p-5 sm:p-6">
@@ -19,8 +20,8 @@ function PersonSpending({ name, data }: { name: string; data: PS }) {
       </div>
       <div className="text-2xl font-bold tracking-tight break-all mb-5">{peso(data.total)}</div>
       {top.length ? <ul className="space-y-4">{top.map(([c, v]) => <li key={c}>
-        <div className="flex flex-wrap justify-between gap-2 text-xs mb-2"><span className="text-muted-foreground">{c}</span><span className="font-semibold">{peso(v)}</span></div>
-        <div className="h-1.5 rounded-full bg-muted"><div className="h-full rounded-full bg-primary/70" style={{ width: `${data.total ? v / data.total * 100 : 0}%` }} /></div>
+        <div className="flex flex-wrap justify-between gap-2 text-xs mb-2"><span className="text-muted-foreground"><CategoryLabel name={c} /></span><span className="font-semibold">{peso(v)}</span></div>
+        <div className="h-1.5 rounded-full bg-muted"><div className="h-full rounded-full" style={{ background: style(c).color, width: `${data.total ? v / data.total * 100 : 0}%` }} /></div>
       </li>)}</ul> : <p className="text-sm text-muted-foreground">No expenses yet this month.</p>}
     </Card>
   );

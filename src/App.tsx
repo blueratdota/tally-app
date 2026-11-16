@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { ChartNoAxesColumnIncreasing, LayoutDashboard, ChartSpline, CreditCard, Landmark, Wallet, ArrowLeftRight, Plus, Settings, CalendarClock } from 'lucide-react';
-import { api, setPasscode, hasPasscode, ApiError, type Account, type AccountType, type NetWorth, type NetWorthPoint, type Spending, type Transaction, type View, type Person, type Plan, type Goal } from '@/lib/api';
+import { api, setPasscode, hasPasscode, ApiError, type Account, type AccountType, type NetWorth, type NetWorthPoint, type Spending, type Transaction, type View, type Person, type Plan, type Goal, type HouseholdSettings } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Toaster } from '@/components/ui/sonner';
-import { PEOPLE, localDate } from '@/lib/format';
-import { PeopleContext } from '@/lib/household';
+import { PEOPLE, CATEGORY_STYLES, localDate } from '@/lib/format';
+import { PeopleContext, CategoryContext } from '@/lib/household';
 import SettingsModal from '@/components/SettingsModal';
+import CategoryStylesModal from '@/components/CategoryStylesModal';
 import ScheduleManager from '@/components/ScheduleManager';
 import Unlock from '@/components/Unlock';
 import Dashboard from '@/components/Dashboard';
@@ -31,12 +32,19 @@ export type OpenAccountModal = (m: { type: AccountType; account: Account | null 
 
 export default function App() {
   const [names, setNames] = useState<Record<Person, string>>(PEOPLE);
+  const [categoryStyles, setCategoryStyles] = useState(CATEGORY_STYLES);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const VIEWS: [View, string][] = [['all', 'Combined'], ...Object.entries(names) as [Person, string][]];
   const [page, setPage] = useState<Page>('dashboard');
+  // Account the Transactions page opens filtered to (set by clicking a card); cleared on normal tab changes.
+  const [txAccount, setTxAccount] = useState('');
+  // Every page change opens at the top instead of keeping the last page's scroll position.
+  const openPage = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const goTo = (p: Page) => { setTxAccount(''); openPage(p); };
   const [view, setView] = useState<View>('all');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -58,7 +66,7 @@ export default function App() {
       if (request !== refreshId.current) return;
       const [accRes, txRes, goalRes, settingsRes] = await Promise.all([api.getAccounts(month), api.getTransactions(), api.getGoals(), api.getSettings()]);
       if (request !== refreshId.current) return;
-      setPlans(planRes.plans); setGoals(goalRes.goals); setNames(settingsRes.names);
+      setPlans(planRes.plans); setGoals(goalRes.goals); setNames(settingsRes.names); setCategoryStyles({ ...CATEGORY_STYLES, ...settingsRes.categories });
       setAccounts(accRes.accounts);
       setNetWorthByView(accRes.netWorthByView);
       setHistoryByView(accRes.historyByView);
@@ -97,12 +105,14 @@ export default function App() {
   const shownTx = view === 'all' ? transactions : transactions.filter(t => t.person === view);
   const openAccountModal: OpenAccountModal = setAcctModal;
 
+  const applySettings = (value: HouseholdSettings) => { setNames(value.names); setCategoryStyles({ ...CATEGORY_STYLES, ...value.categories }); };
+
   if (locked) {
     return <Unlock error={unlockError} onUnlock={code => { setPasscode(code); loadAll(); }} />;
   }
 
   return (
-    <PeopleContext.Provider value={names}><div className="app-shell max-w-[1200px] mx-auto">
+    <PeopleContext.Provider value={names}><CategoryContext.Provider value={categoryStyles}><div className="app-shell max-w-[1200px] mx-auto">
       <header className="flex flex-wrap items-center justify-between gap-4 mb-6 sm:mb-8">
         <div className="flex w-full items-center justify-between gap-3 sm:w-auto"><div className="flex items-center gap-3">
           <span className="brand-mark"><ChartNoAxesColumnIncreasing className="size-5" aria-hidden="true" /></span>
@@ -112,9 +122,9 @@ export default function App() {
           </div>
         </div><div className="flex gap-1 sm:hidden"><Button variant="ghost" size="icon" aria-label="Manage schedules" onClick={() => setSchedulesOpen(true)}><CalendarClock aria-hidden="true" /></Button><Button variant="ghost" size="icon" aria-label="Household settings" onClick={() => setSettingsOpen(true)}><Settings aria-hidden="true" /></Button></div></div>
         <div className="flex min-w-0 items-center gap-2 max-sm:w-full">
-          <ToggleGroup type="single" size="sm" aria-label="View" className="min-w-0 rounded-full bg-white border p-1 max-sm:flex-1"
+          <ToggleGroup type="single" size="sm" aria-label="View" className="min-w-0 rounded-full bg-white border p-1 max-sm:flex-1 sm:shrink-0"
             value={view} onValueChange={v => v && setView(v as View)}>
-            {VIEWS.map(([id, name]) => <ToggleGroupItem key={id} value={id} className="min-w-0 flex-1 whitespace-nowrap rounded-full px-3 text-xs data-[state=on]:bg-foreground data-[state=on]:text-white"><span className="truncate">{name}</span></ToggleGroupItem>)}
+            {VIEWS.map(([id, name]) => <ToggleGroupItem key={id} value={id} className="min-w-0 flex-auto whitespace-nowrap rounded-full px-3 text-xs data-[state=on]:bg-foreground data-[state=on]:text-white sm:flex-none"><span className="truncate">{name}</span></ToggleGroupItem>)}
           </ToggleGroup>
           <Button variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="Manage schedules" onClick={() => setSchedulesOpen(true)}><CalendarClock aria-hidden="true" /></Button>
           <Button variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="Household settings" onClick={() => setSettingsOpen(true)}><Settings aria-hidden="true" /></Button>
@@ -124,7 +134,7 @@ export default function App() {
         </div>
       </header>
 
-      <Tabs value={page} onValueChange={v => setPage(v as Page)}>
+      <Tabs value={page} onValueChange={v => goTo(v as Page)}>
         <TabsList aria-label="Main navigation" className="app-nav grid h-auto w-full grid-cols-6 gap-0.5 rounded-none sm:mb-8 sm:gap-2 sm:border-b sm:pb-4">
           {PAGES.map(([id, label]) => {
             const Icon = PAGE_ICONS[id];
@@ -141,17 +151,17 @@ export default function App() {
             <div className="h-48 bg-muted rounded" />
           </div>
         ) : <>
-        <TabsContent value="dashboard"><Dashboard netWorth={netWorth} spending={spending} byType={byType} setPage={setPage} view={view} /></TabsContent>
+        <TabsContent value="dashboard"><Dashboard netWorth={netWorth} spending={spending} byType={byType} setPage={goTo} view={view} /></TabsContent>
         <TabsContent value="insights"><Insights transactions={shownTx.filter(t => t.date <= localDate())} history={historyByView?.[view] || []} view={view} onViewChange={setView} /></TabsContent>
-        <TabsContent value="creditcards"><CreditCards byType={byType} openAccountModal={openAccountModal} /></TabsContent>
+        <TabsContent value="creditcards"><CreditCards byType={byType} openAccountModal={openAccountModal} onOpen={id => { setTxAccount(id); openPage('transactions'); }} /></TabsContent>
         <TabsContent value="loans"><Loans byType={byType} openAccountModal={openAccountModal} /></TabsContent>
         <TabsContent value="savings"><Savings byType={byType} openAccountModal={openAccountModal} goals={goals} reload={loadAll} /></TabsContent>
-        <TabsContent value="transactions"><Transactions transactions={shownTx} allTransactions={transactions} accounts={accounts} view={view} accountName={accountName} reload={loadAll} onEdit={setTxModal} /></TabsContent>
+        <TabsContent value="transactions"><Transactions key={txAccount || 'all'} initialAccount={txAccount || undefined} transactions={shownTx} allTransactions={transactions} accounts={accounts} plans={plans} view={view} accountName={accountName} reload={loadAll} onEdit={setTxModal} /></TabsContent>
         </>}
       </Tabs>
 
       {txModal && (
-        <TxModal key={txModal === 'new' ? 'new' : txModal.id} accounts={accounts} transaction={txModal === 'new' ? undefined : txModal}
+        <TxModal key={txModal === 'new' ? 'new' : txModal.id} accounts={accounts} history={transactions} transaction={txModal === 'new' ? undefined : txModal}
           onClose={() => setTxModal(null)}
           onSaved={async () => { setTxModal(null); toast('Saved'); await loadAll(); }} />
       )}
@@ -162,9 +172,10 @@ export default function App() {
           onSaved={async msg => { setAcctModal(null); toast(msg || 'Saved'); await loadAll(); }} />
       )}
 
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} onSaved={value => { setNames(value); setSettingsOpen(false); toast('Names saved'); }} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} onSaved={value => { applySettings(value); setSettingsOpen(false); toast('Settings saved'); }} onEditCategories={() => { setSettingsOpen(false); setCategoriesOpen(true); }} />}
+      {categoriesOpen && <CategoryStylesModal onClose={() => setCategoriesOpen(false)} onSaved={value => { applySettings(value); setCategoriesOpen(false); toast('Categories saved'); }} />}
       {schedulesOpen && <ScheduleManager plans={plans} transactions={transactions} accounts={accounts} view={view} onClose={() => setSchedulesOpen(false)} reload={loadAll} />}
       <Toaster position="bottom-center" offset={{ bottom: 'var(--toast-bottom)' }} mobileOffset={{ bottom: 'var(--toast-bottom)', left: 16, right: 16 }} />
-    </div></PeopleContext.Provider>
+    </div></CategoryContext.Provider></PeopleContext.Provider>
   );
 }

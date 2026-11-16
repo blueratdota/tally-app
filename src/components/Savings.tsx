@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { usePeople } from '@/lib/household';
+import { usePeople, CategoryLabel } from '@/lib/household';
 import { peso, ownerLabel, CATEGORIES } from '@/lib/format';
 import { api, type AccountType, type Account, type Goal, type Person } from '@/lib/api';
 import type { OpenAccountModal } from '@/App';
@@ -28,7 +28,7 @@ function BalanceAdjustment({ account, onClose, onSaved }: { account: Account; on
       <div className="grid gap-2"><Label htmlFor="actual-balance">Actual current balance (₱)</Label><Input id="actual-balance" type="number" step="0.01" required value={balance} onChange={e => setBalance(e.target.value)} /></div>
       <p className="text-xs text-muted-foreground">{!Number.isFinite(delta) ? 'Enter a balance.' : !delta ? 'No adjustment is needed.' : `This records ${peso(Math.abs(delta))} as ${delta < 0 ? 'an expense' : 'income'}. Your existing transactions stay intact.`}</p>
       {!!delta && <div className="grid gap-2"><Label htmlFor="adjust-person">Attribute adjustment to</Label><Select required value={person} onValueChange={setPerson}><SelectTrigger id="adjust-person"><SelectValue placeholder="Choose a person" /></SelectTrigger><SelectContent>{Object.entries(names).map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select></div>}
-      {delta < 0 && <div className="grid gap-2"><Label htmlFor="adjust-category">Expense category</Label><Select value={category} onValueChange={setCategory}><SelectTrigger id="adjust-category"><SelectValue /></SelectTrigger><SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>}
+      {delta < 0 && <div className="grid gap-2"><Label htmlFor="adjust-category">Expense category</Label><Select value={category} onValueChange={setCategory}><SelectTrigger id="adjust-category"><SelectValue /></SelectTrigger><SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}><CategoryLabel name={c} /></SelectItem>)}</SelectContent></Select></div>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}<Button disabled={busy || (!!delta && !person)}>{busy ? 'Saving…' : 'Save balance adjustment'}</Button>
     </form>
   </DialogContent></Dialog>;

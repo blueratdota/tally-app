@@ -10,10 +10,10 @@ const code = ts.transpileModule(app.slice(start, app.indexOf('\n  useEffect', st
 class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
 function context(getAccounts) {
   const state = {};
-  const ctx = { refreshId: { current: 0 }, useCallback: f => f, localDate: () => '2026-11-16', ApiError,
+  const ctx = { refreshId: { current: 0 }, useCallback: f => f, localDate: () => '2026-11-16', ApiError, CATEGORY_STYLES: {},
     hasPasscode: () => true, setPasscode: value => { state.passcode = value; }, toast: { error: () => {} },
     api: { getPlans: async () => ({ plans: [] }), getAccounts, getTransactions: async () => ({ transactions: [] }), getGoals: async () => ({ goals: [] }), getSettings: async () => ({ names: {} }) } };
-  for (const key of ['Plans', 'Goals', 'Names', 'Accounts', 'NetWorthByView', 'HistoryByView', 'Spending', 'Locked', 'Transactions', 'UnlockError']) ctx['set' + key] = value => { state[key] = value; };
+  for (const key of ['Plans', 'Goals', 'Names', 'CategoryStyles', 'Accounts', 'NetWorthByView', 'HistoryByView', 'Spending', 'Locked', 'Transactions', 'UnlockError']) ctx['set' + key] = value => { state[key] = value; };
   vm.runInNewContext(code, ctx);
   return { run: ctx.run, state };
 }

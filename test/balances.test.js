@@ -142,3 +142,14 @@ assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1'
   assert.equal(on('2026-02-28', [{ type: 'expense', amount: 1, from_account_id: 'due', date: '2026-01-31' }], short).dueDate, '2026-02-28');
   assert.equal(on('2026-03-01', [{ type: 'expense', amount: 1, from_account_id: 'due', date: '2026-02-28' }], short).dueDate, '2026-03-31');
 }
+
+// --- income into a card (refund/rebate) is a credit, like a payment ---
+{
+  const card = { id: 'cc', type: 'creditcard', cutoff_day: 12, due_day: 7 };
+  const txs = [
+    { type: 'expense', amount: 1000, from_account_id: 'cc', date: '2026-10-01' },
+    { type: 'income', amount: 300, to_account_id: 'cc', date: '2026-10-05', category: 'Refund' },
+    { type: 'income', amount: 999, to_account_id: 'cc', date: '2026-12-01' } // future: not yet
+  ];
+  assert.strictEqual(computeCreditCard(card, txs, new Date(2026, 10, 17)).current, 700);
+}

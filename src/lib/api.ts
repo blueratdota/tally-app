@@ -35,10 +35,12 @@ export interface Transaction {
   person?: Person;
   plan_id?: string;
   plan_index?: number | string;
+  note?: string;
 }
 
 export interface NetWorth { savings: number; cardDebt: number; futureDebt: number; loanDebt: number; netWorth: number }
 export interface NetWorthPoint { month: string; netWorth: number }
+export interface HouseholdSettings { names: Record<Person, string>; categories: Record<string, { emoji: string; color: string }> }
 export interface PersonSpending { total: number; categories: Record<string, number> }
 export interface Spending { total: number; p1: PersonSpending; p2: PersonSpending }
 
@@ -86,8 +88,8 @@ export const api = {
   getGoals: () => call<{ goals: Goal[] }>(fn('goals')),
   saveGoal: (goal: Omit<Goal, 'id'> & { id?: string }) => call(fn('goals'), goal),
   archiveGoal: (id: string) => call(fn('goals'), { action: 'archive', id }),
-  getSettings: () => call<{ names: Record<Person, string> }>(fn('settings')),
-  saveNames: (names: Record<Person, string>) => call<{ names: Record<Person, string> }>(fn('settings'), { names }),
+  getSettings: () => call<HouseholdSettings>(fn('settings')),
+  saveSettings: (settings: HouseholdSettings) => call<HouseholdSettings>(fn('settings'), settings),
   adjustBalance: (account: Account, balance: number, person: Person, category: string) => call(fn('accounts'), { action: 'adjust_balance', id: account.id, previous_balance: Number(account.balance), balance, person, category }),
   previewImport: (rows: ImportRow[]) => call<{ preview: ImportPreview[] }>(fn('transactions'), { action: 'import_preview', rows }),
   importTransactions: (rows: ImportRow[]) => call<{ imported: number; skipped: number }>(fn('transactions'), { action: 'import', rows }),

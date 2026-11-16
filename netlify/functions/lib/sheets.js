@@ -8,7 +8,9 @@ const TX_TAB = 'Transactions';
 
 // Column order — keep in sync with the header row created in setupSheet().
 const ACCOUNTS_COLS = ['id', 'type', 'name', 'balance', 'cutoff_day', 'due_day', 'logo_url', 'archived', 'owner'];
-const TX_COLS = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'voided', 'person', 'plan_id', 'plan_index'];
+const TX_COLS = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'voided', 'person', 'plan_id', 'plan_index', 'note'];
+// Last Transactions column letter, so reads always include every column above (A2:M today).
+const TX_READ = `A2:${String.fromCharCode(64 + TX_COLS.length)}`;
 
 const TABLES = {
   Plans: ['id', 'kind', 'account_id', 'person', 'amount', 'description', 'category', 'start_date', 'frequency', 'end_date', 'count', 'active', 'legacy_ids'],
@@ -136,7 +138,7 @@ async function updateAccount(id, patch) {
 async function listTransactions() {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2:L` });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!${TX_READ}` });
   return [...new Map((res.data.values || []).filter(r => r[0]).map(r => { const tx = rowToObject(r, TX_COLS); return [tx.id, tx]; })).values()];
 }
 
@@ -167,7 +169,7 @@ async function updateTransaction(id, replacement, previous) {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
   const [txData, accountData, meta] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2:L` }),
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!${TX_READ}` }),
     sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` }),
     sheets.spreadsheets.get({ spreadsheetId: SHEET_ID })
   ]);

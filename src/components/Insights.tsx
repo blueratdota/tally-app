@@ -1,4 +1,4 @@
-import { usePeople } from '@/lib/household';
+import { usePeople, useCategoryStyle, CategoryLabel } from '@/lib/household';
 import { useState } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import { peso, localDate } from '@/lib/format';
@@ -178,7 +178,7 @@ function MonthTable({ rows }: { rows: MonthRow[] }) {
 }
 
 function CategoryTable({ transactions, month, view }: { transactions: Transaction[]; month: string; view: View }) {
-  const PEOPLE = usePeople();
+  const PEOPLE = usePeople(); const style = useCategoryStyle();
   const prev = [1, 2, 3].map(n => addMonths(month, -n));
   const now: Record<string, number> = {}, avg: Record<string, number> = {};
   const byPerson: Record<string, Record<string, number>> = {};
@@ -195,29 +195,30 @@ function CategoryTable({ transactions, month, view }: { transactions: Transactio
   if (!cats.length) return <Card className="p-4 text-sm text-muted-foreground">No expenses in the last four months.</Card>;
   return (
     <Card className="overflow-x-auto" tabIndex={0} role="region" aria-label="Spending categories; scroll for more columns">
-      <table className="w-full min-w-[540px] text-sm">
+      {/* Phones show category, bar, this month and change; the per-person and average columns appear from sm up. */}
+      <table className="w-full text-sm sm:min-w-[540px]">
         <thead className="border-b"><tr>
           <th className={th}>Category</th>
-          <th className={cn(th, 'w-[40%]')}><span className="sr-only">Bar</span></th>
+          <th className={cn(th, 'w-[22%] sm:w-[40%]')}><span className="sr-only">Bar</span></th>
           <th className={cn(th, 'text-right')}>This month</th>
-          {view === 'all' && <th className={cn(th, 'text-right')}>{PEOPLE.p1} / {PEOPLE.p2}</th>}
-          <th className={cn(th, 'text-right')}>3-mo avg</th>
+          {view === 'all' && <th className={cn(th, 'hidden text-right sm:table-cell')}>{PEOPLE.p1} / {PEOPLE.p2}</th>}
+          <th className={cn(th, 'hidden text-right sm:table-cell')}>3-mo avg</th>
           <th className={cn(th, 'text-right')}>vs avg</th>
         </tr></thead>
         <tbody className="divide-y">
           {cats.map(c => {
             const n = now[c] || 0, a = avg[c] || 0, diff = a ? (n - a) / a : null;
             return <tr key={c}>
-              <td className="px-3 py-2">{c}</td>
+              <td className="px-3 py-2"><CategoryLabel name={c} /></td>
               <td className="px-3 py-2">
                 <div className="relative h-2.5 rounded-sm bg-muted">
-                  <div className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(n / max) * 100}%`, background: ORANGE }} />
+                  <div className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(n / max) * 100}%`, background: style(c).color }} />
                   {a > 0 && <div className="absolute -inset-y-0.5 w-0.5 bg-foreground" style={{ left: `${(a / max) * 100}%` }} title="3-month average" />}
                 </div>
               </td>
               <td className={cn(td, 'font-medium')}>{peso(n)}</td>
-              {view === 'all' && <td className={cn(td, 'text-muted-foreground text-xs')}>{short(byPerson[c]?.p1 || 0)} / {short(byPerson[c]?.p2 || 0)}</td>}
-              <td className={cn(td, 'text-muted-foreground')}>{peso(a)}</td>
+              {view === 'all' && <td className={cn(td, 'hidden text-muted-foreground text-xs sm:table-cell')}>{short(byPerson[c]?.p1 || 0)} / {short(byPerson[c]?.p2 || 0)}</td>}
+              <td className={cn(td, 'hidden text-muted-foreground sm:table-cell')}>{peso(a)}</td>
               <td className={cn(td, 'text-xs', diff !== null && diff > 0.1 ? 'text-destructive font-medium' : 'text-muted-foreground')}>
                 {diff === null ? 'new' : (diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '') + Math.abs(Math.round(diff * 100)) + '%'}
               </td>
