@@ -9,7 +9,7 @@ import { ArrowUpRight, Wallet, CreditCard, Landmark, CalendarDays } from 'lucide
 
 const dueText = (d: number) => d < 0 ? `${-d} ${d === -1 ? 'day' : 'days'} overdue` : d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`;
 
-function PersonSpending({ name, data }: { name: string; data: PS }) {
+function PersonSpending({ name, data, onCategory }: { name: string; data: PS; onCategory: (c: string) => void }) {
   const style = useCategoryStyle();
   const top = Object.entries(data.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
   return (
@@ -20,7 +20,7 @@ function PersonSpending({ name, data }: { name: string; data: PS }) {
       </div>
       <div className="text-2xl font-bold tracking-tight break-all mb-5">{peso(data.total)}</div>
       {top.length ? <ul className="space-y-4">{top.map(([c, v]) => <li key={c}>
-        <div className="flex flex-wrap justify-between gap-2 text-xs mb-2"><span className="text-muted-foreground"><CategoryLabel name={c} /></span><span className="font-semibold">{peso(v)}</span></div>
+        <div className="flex flex-wrap justify-between gap-2 text-xs mb-2"><button type="button" className="rounded text-left text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" aria-label={`Show ${c} transactions`} onClick={() => onCategory(c)}><CategoryLabel name={c} /></button><span className="font-semibold">{peso(v)}</span></div>
         <div className="h-1.5 rounded-full bg-muted"><div className="h-full rounded-full" style={{ background: style(c).color, width: `${data.total ? v / data.total * 100 : 0}%` }} /></div>
       </li>)}</ul> : <p className="text-sm text-muted-foreground">No expenses yet this month.</p>}
     </Card>
@@ -33,9 +33,11 @@ interface Props {
   byType: (t: AccountType) => Account[];
   setPage: (p: Page) => void;
   view: View;
+  netWorthByView: Record<View, NetWorth> | null;
+  onCategory: (c: string) => void;
 }
 
-export default function Dashboard({ netWorth, spending, byType, setPage, view }: Props) {
+export default function Dashboard({ netWorth, spending, byType, setPage, view, netWorthByView, onCategory }: Props) {
   const PEOPLE = usePeople();
   const cards = byType('creditcard')
     .filter(a => (a.current ?? 0) > 0 && a.daysUntilDue != null)
@@ -57,6 +59,14 @@ export default function Dashboard({ netWorth, spending, byType, setPage, view }:
             <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-white/80"><span className="size-1.5 shrink-0 rounded-full bg-[#d6efbd]" /><span className="truncate">{view === 'all' ? 'Your household' : PEOPLE[view]}</span></span>
           </div>
           <div className="text-[clamp(30px,6vw,56px)] font-semibold leading-tight tracking-[-0.04em] break-all">{peso(netWorth.netWorth)}</div>
+          {view === 'all' && netWorthByView && (() => {
+            // Shared accounts belong to neither person, so show them as the remainder to make the parts add up.
+            const shared = netWorthByView.all.netWorth - netWorthByView.p1.netWorth - netWorthByView.p2.netWorth;
+            const parts: [string, number][] = [[PEOPLE.p1, netWorthByView.p1.netWorth], [PEOPLE.p2, netWorthByView.p2.netWorth], ...(Math.abs(shared) >= 0.005 ? [['Shared', shared] as [string, number]] : [])];
+            return <dl className={cn('mt-4 grid gap-3 border-t border-white/15 pt-4', parts.length === 3 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2')}>
+              {parts.map(([name, value]) => <div key={name} className="min-w-0"><dt className="truncate text-xs text-white/65">{name}</dt><dd className="text-lg font-semibold tracking-tight break-all sm:text-xl">{peso(value)}</dd></div>)}
+            </dl>;
+          })()}
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-white/65">Savings minus credit card and loan balances</p>
             <Button variant="ghost" onClick={() => setPage('insights')} className="rounded-full bg-white/10 text-white hover:bg-white/20 hover:text-white px-4">Explore insights<ArrowUpRight aria-hidden="true" /></Button>
@@ -88,8 +98,8 @@ export default function Dashboard({ netWorth, spending, byType, setPage, view }:
             <Button variant="ghost" size="sm" className="text-primary" onClick={() => setPage('transactions')}>View activity<ArrowUpRight aria-hidden="true" /></Button>
           </div>
           <div className={cn('grid gap-3', view === 'all' ? 'sm:grid-cols-2' : 'grid-cols-1')}>
-            {view !== 'p2' && <PersonSpending name={PEOPLE.p1} data={spending.p1} />}
-            {view !== 'p1' && <PersonSpending name={PEOPLE.p2} data={spending.p2} />}
+            {view !== 'p2' && <PersonSpending name={PEOPLE.p1} data={spending.p1} onCategory={onCategory} />}
+            {view !== 'p1' && <PersonSpending name={PEOPLE.p2} data={spending.p2} onCategory={onCategory} />}
           </div>
         </section>}
         <section className="min-w-0">

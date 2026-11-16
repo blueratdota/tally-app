@@ -117,6 +117,8 @@ assert.strictEqual(computeCreditCard(card, [...cardTxs, { type: 'transfer', amou
 // Future charges remain scheduled, and midnight in Manila is consistent on UTC hosts.
 const { householdToday } = require('../netlify/functions/lib/balances');
 assert.strictEqual(householdToday(new Date('2026-11-15T16:30:00Z')).toLocaleDateString('en-CA'), '2026-11-16');
+// Balance adjustments change balances but aren't spending.
+assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1', date: '2026-11-10', category: 'Balance adjustment' }], '2026-11', new Date(2026, 10, 15)).total, 0);
 assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1', date: '2026-11-20' }], '2026-11', new Date(2026, 10, 15)).total, 0);
 
 // An unpaid statement keeps its original due date across later cutoffs.
@@ -152,4 +154,33 @@ assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1'
     { type: 'income', amount: 999, to_account_id: 'cc', date: '2026-12-01' } // future: not yet
   ];
   assert.strictEqual(computeCreditCard(card, txs, new Date(2026, 10, 17)).current, 700);
+}
+
+// --- loan: due this month = monthly payment less this month's payments, capped by what's left ---
+{
+  const { computeLoanDue } = require('../netlify/functions/lib/balances');
+  const today = new Date(2026, 10, 17);
+  const loan = { id: 'ln', type: 'loan', balance: 50000, monthly_payment: 5000, due_day: 31 };
+  const pay = (amount, date, extra) => ({ type: 'transfer', amount, to_account_id: 'ln', date, ...extra });
+  assert.deepStrictEqual(computeLoanDue(loan, [], today), { dueThisMonth: 5000, dueDate: '2026-11-30', daysUntilDue: 13, paymentsLeft: 10, lastDueDate: '2027-08-31' }); // day 31 clamps to Nov 30
+  assert.strictEqual(computeLoanDue(loan, [pay(2000, '2026-11-05'), pay(9, '2026-10-31'), pay(9, '2026-11-20'), pay(9, '2026-11-02', { voided: true })], today).dueThisMonth, 3000);
+  assert.strictEqual(computeLoanDue(loan, [pay(5000, '2026-11-05')], today).dueThisMonth, 0);
+  assert.strictEqual(computeLoanDue({ ...loan, balance: 1200 }, [], today).dueThisMonth, 1200); // last payment
+  assert.strictEqual(computeLoanDue({ ...loan, monthly_payment: undefined }, [], today).dueThisMonth, null);
+  assert.strictEqual(computeLoanDue({ ...loan, due_day: 10 }, [], today).daysUntilDue, -7); // overdue
+}
+
+// --- loan: payments left and the month of the last one ---
+{
+  const { computeLoanDue } = require('../netlify/functions/lib/balances');
+  const today = new Date(2026, 10, 17);
+  const kia = { id: 'kia', type: 'loan', balance: 144480, monthly_payment: 9632, due_day: 5 };
+  assert.strictEqual(computeLoanDue(kia, [], today).paymentsLeft, 15);
+  assert.strictEqual(computeLoanDue(kia, [], today).lastDueDate, '2028-01-05'); // Nov unpaid: Nov 2026 .. Jan 2028
+  const paid = [{ type: 'transfer', amount: 9632, to_account_id: 'kia', date: '2026-11-05' }];
+  const after = computeLoanDue({ ...kia, balance: 144480 - 9632 }, paid, today);
+  assert.strictEqual(after.paymentsLeft, 14);
+  assert.strictEqual(after.lastDueDate, '2028-01-05'); // paid this month: Dec 2026 .. Jan 2028
+  assert.strictEqual(computeLoanDue({ ...kia, balance: 10000 }, [], today).paymentsLeft, 2); // smaller final payment
+  assert.strictEqual(computeLoanDue({ ...kia, balance: 0 }, [], today).lastDueDate, null);
 }

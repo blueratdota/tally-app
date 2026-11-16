@@ -21,7 +21,23 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
   const [owner, setOwner] = useState<Owner>(account?.owner || 'shared');
   const [cutoffDay, setCutoffDay] = useState(String(account?.cutoff_day ?? ''));
   const [dueDay, setDueDay] = useState(String(account?.due_day ?? ''));
+  const [monthly, setMonthly] = useState(String(account?.monthly_payment ?? ''));
   const [balance, setBalance] = useState(String(account?.balance ?? ''));
+  const [payments, setPayments] = useState(account?.paymentsLeft ? String(account.paymentsLeft) : '');
+  // Payments remaining × monthly payment = balance; typing either keeps the other in step.
+  const toCents = (n: number) => String(Math.round(n * 100) / 100);
+  function changePayments(v: string) {
+    setPayments(v);
+    if (Number(monthly) > 0 && Number(v) > 0) setBalance(toCents(Number(v) * Number(monthly)));
+  }
+  function changeMonthly(v: string) {
+    setMonthly(v);
+    if (Number(v) > 0 && Number(payments) > 0) setBalance(toCents(Number(payments) * Number(v)));
+  }
+  function changeBalance(v: string) {
+    setBalance(v);
+    if (Number(monthly) > 0 && v !== '') setPayments(String(Math.ceil(Math.round(Number(v) / Number(monthly) * 100) / 100)));
+  }
   const [logoPreview, setLogoPreview] = useState(account?.logo_url || '');
   const [logoDataUri, setLogoDataUri] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -49,7 +65,12 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
         fields.due_day = Number(dueDay);
         fields.logo_url = logo_url;
       }
-      if (type === 'loan') fields.balance = Number(balance);
+      if (type === 'loan') {
+        fields.balance = Number(balance);
+        // Blank clears the schedule; the server treats '' as "not set".
+        fields.monthly_payment = monthly.trim() === '' ? '' : Number(monthly);
+        fields.due_day = dueDay.trim() === '' ? '' : Number(dueDay);
+      }
 
       if (account) await api.updateAccount(account.id, fields);
       else await api.createAccount({ type, ...fields });
@@ -115,13 +136,30 @@ export default function AccountModal({ type, account, onClose, onSaved }: Props)
             </>
           )}
 
-          {type === 'loan' && (
+          {type === 'loan' && (<>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="monthly">Monthly payment (₱)</Label>
+                <Input id="monthly" type="number" min="0" step="0.01" placeholder="0.00" value={monthly} onChange={e => changeMonthly(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="loan-due">Due day (1–31)</Label>
+                <Input id="loan-due" type="number" min="1" max="31" placeholder="e.g. 5" value={dueDay} onChange={e => setDueDay(e.target.value)} />
+              </div>
+            </div>
+            {Number(monthly) > 0 && (
+              <div className="grid gap-1.5">
+                <Label htmlFor="payments">Payments remaining</Label>
+                <Input id="payments" type="number" min="1" step="1" inputMode="numeric" placeholder="e.g. 15" value={payments} onChange={e => changePayments(e.target.value)} aria-describedby="payments-note" />
+                <div id="payments-note" className="text-[11px] text-muted-foreground">Fills in the balance below. Count this month's payment if you haven't paid it yet.</div>
+              </div>
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor="balance">Current balance (₱)</Label>
-              <Input id="balance" type="number" step="0.01" required placeholder="0.00" value={balance} onChange={e => setBalance(e.target.value)} />
+              <Input id="balance" type="number" step="0.01" required placeholder="0.00" value={balance} onChange={e => changeBalance(e.target.value)} />
               <div className="text-[11px] text-muted-foreground">You can update this any time as the loan changes.</div>
             </div>
-          )}
+          </>)}
 
           {error && <div className="text-destructive text-xs">{error}</div>}
 

@@ -14,7 +14,11 @@ export interface Account {
   cutoff_day?: number | string;
   due_day?: number | string;
   logo_url?: string;
-  // credit cards only (derived)
+  monthly_payment?: number | string; // loans only (stored)
+  dueThisMonth?: number | null; // loans only (derived): monthly payment less what was paid this month
+  paymentsLeft?: number | null; // loans only (derived)
+  lastDueDate?: string | null;  // loans only (derived)
+  // credit cards (derived); loans reuse dueDate/daysUntilDue
   current?: number;
   outstanding?: number;
   future?: number;
@@ -71,7 +75,7 @@ async function call<T>(url: string, body?: unknown): Promise<T> {
 
 const fn = (resource: string) => `/.netlify/functions/api?resource=${resource}`;
 
-export type AccountFields = Partial<Pick<Account, 'name' | 'owner' | 'balance' | 'cutoff_day' | 'due_day' | 'logo_url'>>;
+export type AccountFields = Partial<Pick<Account, 'name' | 'owner' | 'balance' | 'cutoff_day' | 'due_day' | 'logo_url' | 'monthly_payment'>>;
 export type Frequency = 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly' | 'yearly';
 export interface Plan { id: string; kind: 'installment' | 'recurring'; account_id: string; person: Person; amount: number; description: string; category: string; start_date: string; frequency: Frequency; end_date: string; count: number | ''; active: boolean; legacy_ids?: string; next_date?: string }
 export interface Goal { id: string; account_id: string; name: string; target: number; saved: number; archived?: boolean }

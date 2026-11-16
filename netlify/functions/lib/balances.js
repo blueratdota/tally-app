@@ -120,6 +120,34 @@ function computeCreditCard(account, transactions, today = householdToday()) {
   };
 }
 
+// What a loan still needs this calendar month: the monthly payment less transfers
+// already made into it this month, never more than what is left on the loan.
+// ponytail: payments count by calendar month, so one made before the 1st for this month's due date isn't credited.
+function computeLoanDue(account, transactions, today = householdToday()) {
+  const monthly = Number(account.monthly_payment) || 0, day = Number(account.due_day);
+  if (!(monthly > 0) || !(day >= 1 && day <= 31)) return { dueThisMonth: null, dueDate: null, daysUntilDue: null, paymentsLeft: null, lastDueDate: null };
+  const todayStr = isoDate(today), month = todayStr.slice(0, 7);
+  let paid = 0;
+  for (const t of transactions) {
+    if (!t.voided && t.type === 'transfer' && t.to_account_id === account.id && t.date <= todayStr && t.date.startsWith(month)) paid += Number(t.amount);
+  }
+  const owedAtMonthStart = Math.max(Number(account.balance) || 0, 0) + paid; // stored balance already has this month's payments taken off
+  const dueOn = m => isoDate(new Date(today.getFullYear(), m, Math.min(day, daysInMonth(today.getFullYear(), m))));
+  const dueDate = dueOn(today.getMonth());
+  const dueThisMonth = round2(Math.max(Math.min(monthly, owedAtMonthStart) - paid, 0));
+  // Payments still to make, the last one smaller if the balance doesn't divide evenly.
+  const balance = Math.max(Number(account.balance) || 0, 0);
+  const paymentsLeft = Math.ceil(round2(balance / monthly));
+  const firstMonth = today.getMonth() + (dueThisMonth > 0 ? 0 : 1);
+  return {
+    dueThisMonth,
+    dueDate,
+    daysUntilDue: Math.round((Date.parse(dueDate) - Date.parse(todayStr)) / 864e5),
+    paymentsLeft,
+    lastDueDate: paymentsLeft ? dueOn(firstMonth + paymentsLeft - 1) : null
+  };
+}
+
 function computeNetWorth(accounts, transactions, today = householdToday()) {
   let savings = 0, cardDebt = 0, loanDebt = 0, futureDebt = 0;
   for (const a of accounts) {
@@ -145,7 +173,7 @@ function monthlySpending(transactions, month, today = householdToday()) {
   const todayStr = isoDate(today);
   const out = { total: 0, p1: { total: 0, categories: {} }, p2: { total: 0, categories: {} } };
   for (const t of transactions) {
-    if (t.voided || t.date > todayStr || t.type !== 'expense' || !String(t.date).startsWith(month)) continue;
+    if (t.voided || t.date > todayStr || t.type !== 'expense' || t.category === 'Balance adjustment' || !String(t.date).startsWith(month)) continue;
     const p = out[t.person];
     const amt = Number(t.amount);
     out.total += amt;
@@ -179,5 +207,6 @@ module.exports = {
   lastCutoffDate,
   computeSavingsBalance,
   computeCreditCard,
+  computeLoanDue,
   computeNetWorth
 };

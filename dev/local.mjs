@@ -46,7 +46,7 @@ if (offline) {
     listTransactions: async () => txs.map(t => ({ ...t })),
     appendTransaction: async t => { txs.push({ ...t, voided: false }); },
     appendTransactions: async rows => { txs.push(...rows.map(t => ({ ...t, voided: false }))); },
-    updateTransaction: async (id, replacement, previous) => {
+    updateTransaction: async (id, replacement, previous, shareNote = { ids: [], note: '' }) => {
       const current = txs.find(t => t.id === id);
       if (!current) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
       if (current.voided) {
@@ -65,6 +65,7 @@ if (offline) {
       if ([...balances.values()].some(b => !Number.isFinite(b))) throw new Error('The loan has an invalid stored balance');
       if (replacement) txs.push({ ...current, id: `${id}:revision:${randomUUID()}`, voided: true });
       Object.assign(current, replacement || { voided: true });
+      if (replacement) for (const t of txs) if (shareNote.ids.includes(t.id)) t.note = shareNote.note || '';
       for (const [loan, balance] of balances) loan.balance = Math.round((balance + Number.EPSILON) * 100) / 100;
     },
     voidTransaction: async id => { await mock.updateTransaction(id, null); },
@@ -75,21 +76,36 @@ if (offline) {
   console.warn('APP_PASSCODE is not set in .env — every request will be refused.');
 }
 
-const handlers = {
-  '/.netlify/functions/api': require('../netlify/functions/api.js').handler,
+const handlers = {};
+function loadHandlers() {
+  handlers['/.netlify/functions/api'] = require('../netlify/functions/api.js').handler;
   // Logo upload needs Cloudinary; without it, say so instead of failing obscurely.
-  '/.netlify/functions/upload-logo': process.env.CLOUDINARY_CLOUD_NAME
+  handlers['/.netlify/functions/upload-logo'] = process.env.CLOUDINARY_CLOUD_NAME
     ? require('../netlify/functions/upload-logo.js').handler
-    : async () => ({ statusCode: 501, body: JSON.stringify({ success: false, error: 'Logo upload needs the Cloudinary settings in .env' }) }),
-};
+    : async () => ({ statusCode: 501, body: JSON.stringify({ success: false, error: 'Logo upload needs the Cloudinary settings in .env' }) });
+}
+loadHandlers();
+// Backend edits apply without a restart: drop the function modules from the
+// require cache and load them again (the offline in-memory store is kept).
+const fnDir = require.resolve('../netlify/functions/api.js').replace(/api\.js$/, '');
+const keep = offline ? require.resolve('../netlify/functions/lib/sheets.js') : null;
+function reloadHandlers(file) {
+  if (!file.startsWith(fnDir)) return;
+  for (const key of Object.keys(require.cache)) if (key.startsWith(fnDir) && key !== keep) delete require.cache[key];
+  try { loadHandlers(); console.log('Reloaded functions after', file.slice(fnDir.length)); }
+  catch (err) { console.error('Function reload failed, keeping the previous version:', err.message); }
+}
 
 const server = await createServer({
   server: { port: 5173 },
   plugins: [{
     name: 'local-functions',
     configureServer(s) {
-      for (const [path, handler] of Object.entries(handlers)) {
+      s.watcher.add(fnDir);
+      s.watcher.on('change', reloadHandlers);
+      for (const path of Object.keys(handlers)) {
         s.middlewares.use(path, async (req, res) => {
+          const handler = handlers[path];
           let body = ''; for await (const c of req) body += c;
           const url = new URL(req.url, 'http://x');
           const r = await handler({ httpMethod: req.method, body, headers: req.headers, queryStringParameters: Object.fromEntries(url.searchParams) });

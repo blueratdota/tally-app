@@ -6,7 +6,7 @@ import { PageHead, Rows, Row } from './rows';
 import { cn } from '@/lib/utils';
 
 // "Dec 7 · in 20 days", from the oldest unpaid statement the server worked out.
-const due = (a: Account) => {
+export const due = (a: Account) => {
   if (!a.dueDate || a.daysUntilDue == null) return 'Nothing due';
   const d = a.daysUntilDue, when = d < 0 ? `${-d} ${d === -1 ? 'day' : 'days'} overdue` : d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`;
   return `${new Date(a.dueDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} · ${when}`;

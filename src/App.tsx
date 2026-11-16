@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Toaster } from '@/components/ui/sonner';
-import { PEOPLE, CATEGORY_STYLES, localDate } from '@/lib/format';
+import { PEOPLE, CATEGORY_STYLES, localDate, isAdjustment } from '@/lib/format';
 import { PeopleContext, CategoryContext } from '@/lib/household';
 import SettingsModal from '@/components/SettingsModal';
 import CategoryStylesModal from '@/components/CategoryStylesModal';
@@ -42,9 +42,13 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard');
   // Account the Transactions page opens filtered to (set by clicking a card); cleared on normal tab changes.
   const [txAccount, setTxAccount] = useState('');
+  const [txCategory, setTxCategory] = useState('');
+  const [txMonth, setTxMonth] = useState('');
   // Every page change opens at the top instead of keeping the last page's scroll position.
   const openPage = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const goTo = (p: Page) => { setTxAccount(''); openPage(p); };
+  const goTo = (p: Page) => { setTxAccount(''); setTxCategory(''); setTxMonth(''); openPage(p); };
+  const openCategory = (c: string) => { goTo('transactions'); setTxCategory(c); };
+  const openMonth = (m: string) => { goTo('transactions'); setTxMonth(m); };
   const [view, setView] = useState<View>('all');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -151,12 +155,12 @@ export default function App() {
             <div className="h-48 bg-muted rounded" />
           </div>
         ) : <>
-        <TabsContent value="dashboard"><Dashboard netWorth={netWorth} spending={spending} byType={byType} setPage={goTo} view={view} /></TabsContent>
-        <TabsContent value="insights"><Insights transactions={shownTx.filter(t => t.date <= localDate())} history={historyByView?.[view] || []} view={view} onViewChange={setView} /></TabsContent>
+        <TabsContent value="dashboard"><Dashboard netWorth={netWorth} spending={spending} byType={byType} setPage={goTo} view={view} netWorthByView={netWorthByView} onCategory={openCategory} /></TabsContent>
+        <TabsContent value="insights"><Insights transactions={shownTx.filter(t => t.date <= localDate() && !isAdjustment(t))} history={historyByView?.[view] || []} view={view} onViewChange={setView} onCategory={openCategory} onMonth={openMonth} /></TabsContent>
         <TabsContent value="creditcards"><CreditCards byType={byType} openAccountModal={openAccountModal} onOpen={id => { setTxAccount(id); openPage('transactions'); }} /></TabsContent>
         <TabsContent value="loans"><Loans byType={byType} openAccountModal={openAccountModal} /></TabsContent>
         <TabsContent value="savings"><Savings byType={byType} openAccountModal={openAccountModal} goals={goals} reload={loadAll} /></TabsContent>
-        <TabsContent value="transactions"><Transactions key={txAccount || 'all'} initialAccount={txAccount || undefined} transactions={shownTx} allTransactions={transactions} accounts={accounts} plans={plans} view={view} accountName={accountName} reload={loadAll} onEdit={setTxModal} /></TabsContent>
+        <TabsContent value="transactions"><Transactions key={[txAccount, txCategory, txMonth].join('|')} initialAccount={txAccount || undefined} initialCategory={txCategory || undefined} initialMonth={txMonth || undefined} transactions={shownTx} allTransactions={transactions} accounts={accounts} plans={plans} view={view} accountName={accountName} reload={loadAll} onEdit={setTxModal} /></TabsContent>
         </>}
       </Tabs>
 

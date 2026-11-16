@@ -14,7 +14,7 @@ process.env.SHEET_ID = 'test';
   const db = require('../netlify/functions/lib/sheets');
   const tx = await db.listTransactions();
   assert.deepEqual(added.sort(), ['Goals', 'Plans', 'Settings']);
-  assert(writes.every(w => w.range === 'Transactions!K1' || /^(Plans|Goals|Settings)!A1$/.test(w.range)), 'migration only writes new header cells');
+  assert(writes.every(w => w.range === 'Transactions!K1' || w.range === 'Accounts!J1' || /^(Plans|Goals|Settings)!A1$/.test(w.range)), 'migration only writes new header cells');
   assert(reads.includes('Transactions!A2:M'), 'transaction reads must include the note column (M)');
   assert.equal(tx[0].id, 'original'); assert.equal(tx[0].amount, 123); assert.equal(tx[0].plan_id, '');
   assert.equal(db.TX_COLS[8], 'voided'); assert.equal(db.TX_COLS[9], 'person');

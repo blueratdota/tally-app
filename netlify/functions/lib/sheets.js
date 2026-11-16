@@ -7,7 +7,7 @@ const ACCOUNTS_TAB = 'Accounts';
 const TX_TAB = 'Transactions';
 
 // Column order — keep in sync with the header row created in setupSheet().
-const ACCOUNTS_COLS = ['id', 'type', 'name', 'balance', 'cutoff_day', 'due_day', 'logo_url', 'archived', 'owner'];
+const ACCOUNTS_COLS = ['id', 'type', 'name', 'balance', 'cutoff_day', 'due_day', 'logo_url', 'archived', 'owner', 'monthly_payment'];
 const TX_COLS = ['id', 'date', 'type', 'amount', 'description', 'category', 'from_account_id', 'to_account_id', 'voided', 'person', 'plan_id', 'plan_index', 'note'];
 // Last Transactions column letter, so reads always include every column above (A2:M today).
 const TX_READ = `A2:${String.fromCharCode(64 + TX_COLS.length)}`;
@@ -44,6 +44,7 @@ function rowToObject(row, cols) {
   obj.balance = obj.balance !== '' ? Number(obj.balance) : undefined;
   obj.cutoff_day = obj.cutoff_day !== '' ? Number(obj.cutoff_day) : undefined;
   obj.due_day = obj.due_day !== '' ? Number(obj.due_day) : undefined;
+  if ('monthly_payment' in obj) obj.monthly_payment = obj.monthly_payment !== '' ? Number(obj.monthly_payment) : undefined;
   obj.archived = obj.archived === 'TRUE' || obj.archived === true;
   obj.voided = obj.voided === 'TRUE' || obj.voided === true;
   for (const key of ['target', 'saved', 'count', 'plan_index']) if (key in obj && obj[key] !== '') obj[key] = Number(obj[key]);
@@ -96,6 +97,9 @@ async function createMissingTabs() {
   if (existingTabs.includes(TX_TAB)) await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID, range: `${TX_TAB}!K1`, valueInputOption: 'RAW', requestBody: { values: [TX_COLS.slice(10)] }
   });
+  if (existingTabs.includes(ACCOUNTS_TAB)) await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!J1`, valueInputOption: 'RAW', requestBody: { values: [ACCOUNTS_COLS.slice(9)] }
+  });
   for (const [tab, cols] of Object.entries(TABLES)) if (!existingTabs.includes(tab)) await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID, range: `${tab}!A1`, valueInputOption: 'RAW', requestBody: { values: [cols] }
   });
@@ -105,7 +109,7 @@ async function createMissingTabs() {
 async function listAccounts() {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:J` });
   return (res.data.values || []).map(r => rowToObject(r, ACCOUNTS_COLS)).filter(a => a.id);
 }
 
@@ -122,14 +126,14 @@ async function appendAccount(account) {
 async function updateAccount(id, patch) {
   const sheets = await getSheetsClient();
   await ensureSheetsExist();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:J` });
   const rows = res.data.values || [];
   const idx = rows.findIndex(row => row[0] === id);
   if (idx === -1) throw new Error('Account not found');
   const merged = { ...rowToObject(rows[idx], ACCOUNTS_COLS), ...patch };
   const rowNum = idx + 2; // +2: header row + 1-indexing
   await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:I${rowNum}`, valueInputOption: 'RAW',
+    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:J${rowNum}`, valueInputOption: 'RAW',
     requestBody: { values: [objectToRow(merged, ACCOUNTS_COLS)] }
   });
   return merged;
@@ -165,12 +169,12 @@ function cellData(value) {
   return { userEnteredValue: typeof value === 'number' ? { numberValue: value } : typeof value === 'boolean' ? { boolValue: value } : { stringValue: String(value ?? '') } };
 }
 
-async function updateTransaction(id, replacement, previous) {
+async function updateTransaction(id, replacement, previous, shareNote = { ids: [], note: '' }) {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
   const [txData, accountData, meta] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${TX_TAB}!${TX_READ}` }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` }),
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:J` }),
     sheets.spreadsheets.get({ spreadsheetId: SHEET_ID })
   ]);
   const txRows = txData.data.values || [], accountRows = accountData.data.values || [];
@@ -189,6 +193,11 @@ async function updateTransaction(id, replacement, previous) {
     range: { sheetId: sheetId(TX_TAB), startRowIndex: i + 1, endRowIndex: i + 2, startColumnIndex: 0, endColumnIndex: TX_COLS.length },
     rows: [{ values: objectToRow(replacement || { ...original, voided: true }, TX_COLS).map(cellData) }], fields: 'userEnteredValue'
   } }]);
+  const noteCol = TX_COLS.indexOf('note');
+  if (replacement) txRows.forEach((row, i) => { if (shareNote.ids.includes(row[0])) requests.push({ updateCells: {
+    range: { sheetId: sheetId(TX_TAB), startRowIndex: i + 1, endRowIndex: i + 2, startColumnIndex: noteCol, endColumnIndex: noteCol + 1 },
+    rows: [{ values: [cellData(shareNote.note || '')] }], fields: 'userEnteredValue'
+  } }); });
   if (replacement) requests.push({ appendCells: {
     sheetId: sheetId(TX_TAB), rows: [{ values: objectToRow({ ...original, id: `${id}:revision:${crypto.randomUUID()}`, voided: true }, TX_COLS).map(cellData) }], fields: 'userEnteredValue'
   } });

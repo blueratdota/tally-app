@@ -11,6 +11,8 @@ export function peso(n: unknown) {
 export const PEOPLE: Record<Person, string> = { p1: 'Person 1', p2: 'Person 2' };
 export const ownerLabel = (o: Owner, names: Record<Person, string> = PEOPLE) => (o === 'shared' ? 'Shared' : names[o] || 'Shared');
 // Household day in Manila, matching server balances and recurring schedules.
+// Balance adjustments (e.g. an existing account's opening balance) move balances but aren't real income or spending.
+export const isAdjustment = (t: { category?: string }) => t.category === 'Balance adjustment';
 export const localDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
 export interface CategoryStyle { emoji: string; color: string }

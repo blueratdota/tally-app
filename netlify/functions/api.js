@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const sheetsDb = require('./lib/sheets');
 const { installmentSchedule } = require('./lib/installments');
 const { FREQUENCIES, occurrence, dueCharges, transactionKey, nextChargeDate } = require('./lib/plans');
-const { computeSavingsBalance, computeCreditCard, computeNetWorth, monthlySpending, netWorthHistory, round2, householdToday } = require('./lib/balances');
+const { computeSavingsBalance, computeCreditCard, computeLoanDue, computeNetWorth, monthlySpending, netWorthHistory, round2, householdToday } = require('./lib/balances');
 const { passcodeOk, denied } = require('./lib/passcode');
 
 const VALID_TYPES = ['savings', 'creditcard', 'loan'];
@@ -36,7 +36,7 @@ async function handleAccounts(event) {
     const enriched = live.map(a => {
       if (a.type === 'savings') return { ...a, balance: computeSavingsBalance(a.id, transactions) };
       if (a.type === 'creditcard') return { ...a, ...computeCreditCard(a, transactions) };
-      return a; // loan: balance field is already the stored, manually-maintained value
+      return { ...a, ...computeLoanDue(a, transactions) }; // loan: balance field is already the stored, manually-maintained value
     });
     // Every view at once (combined, or strictly personal accounts), so the
     // client can switch person without another round trip to Sheets.
@@ -99,7 +99,8 @@ async function handleAccounts(event) {
       due_day: validated.due_day ?? '',
       logo_url: validated.logo_url || '',
       archived: false,
-      owner: validated.owner
+      owner: validated.owner,
+      monthly_payment: validated.monthly_payment ?? ''
     };
     await sheetsDb.appendAccount(account);
     return json(200, { success: true, account });
@@ -144,7 +145,9 @@ async function handleTransactions(event) {
     const numAmount = tx.amount;
     if (action === 'update') {
       tx.id = body.id;
-      await sheetsDb.updateTransaction(body.id, tx, body.previous);
+      // A note on one installment charge applies to every charge of that installment.
+      const siblings = (tx.note || '') !== (original.note || '') ? await installmentSiblings(original) : [];
+      await sheetsDb.updateTransaction(body.id, tx, body.previous, { ids: siblings, note: tx.note });
       return json(200, { success: true, transaction: tx });
     }
     if (body.installments !== undefined) {
@@ -183,6 +186,16 @@ async function handleTransactions(event) {
   return json(405, { success: false, error: 'Method not allowed' });
 }
 
+// Other live charges of the same installment: same plan, or imported "Desc (n/m)" rows on the same card.
+async function installmentSiblings(t) {
+  const base = s => String(s || '').match(/^(.*?)\s*\(\d+\s*\/\s*(\d+)\)\s*$/);
+  const mine = base(t.description);
+  if (!mine) return []; // recurring charges share a plan_id too, but only installments carry (n/m)
+  return (await sheetsDb.listTransactions()).filter(o => o.id !== t.id && !o.voided && (t.plan_id
+    ? o.plan_id === t.plan_id
+    : (m => m && m[1] === mine[1] && m[2] === mine[2] && o.from_account_id === t.from_account_id)(base(o.description)))).map(o => o.id);
+}
+
 function userError(message, statusCode = 400) { return Object.assign(new Error(message), { statusCode }); }
 function todayISO() { return householdToday().toLocaleDateString('en-CA'); }
 function validDate(value) {
@@ -196,12 +209,14 @@ function money(value, allowZero = false) {
 }
 function validateAccountFields(fields, type, partial = false) {
   if (!fields || typeof fields !== 'object' || Array.isArray(fields)) throw userError('Enter account fields');
-  const allowed = ['name', 'owner', ...(type === 'loan' ? ['balance'] : type === 'creditcard' ? ['cutoff_day', 'due_day', 'logo_url'] : [])];
+  const allowed = ['name', 'owner', ...(type === 'loan' ? ['balance', 'due_day', 'monthly_payment'] : type === 'creditcard' ? ['cutoff_day', 'due_day', 'logo_url'] : [])];
   if (Object.keys(fields).some(k => !allowed.includes(k))) throw userError('Account contains fields that cannot be edited');
   const result = {};
   for (const key of allowed) {
     const value = fields[key];
     if (value === undefined && (partial || key === 'logo_url')) continue;
+    // A loan's payment schedule is optional; a blank clears it.
+    if (type === 'loan' && ['due_day', 'monthly_payment'].includes(key) && (value === undefined || value === '')) { if (value === '') result[key] = ''; continue; }
     if (key === 'name') {
       if (typeof value !== 'string' || !value.trim()) throw userError('Name is required');
       result[key] = value.trim();
@@ -212,10 +227,11 @@ function validateAccountFields(fields, type, partial = false) {
       if (typeof value !== 'string') throw userError('Logo URL must be text');
       result[key] = value;
     } else {
-      const n = Number(value), cents = Math.round(n * 100);
+      const n = Number(value), cents = Math.round(n * 100), money = key === 'balance' || key === 'monthly_payment';
       if (!['number', 'string'].includes(typeof value) || String(value).trim() === '' || !Number.isFinite(n)) throw userError('Enter a valid account number');
-      if (key === 'balance' ? !Number.isSafeInteger(cents) || Math.abs(n * 100 - cents) > 0.000001 : !Number.isInteger(n) || n < 1 || n > 31) throw userError(key === 'balance' ? 'Enter a balance with up to two decimal places' : 'Cutoff and due day must be between 1 and 31');
-      result[key] = key === 'balance' ? cents / 100 : n;
+      if (money ? !Number.isSafeInteger(cents) || Math.abs(n * 100 - cents) > 0.000001 : !Number.isInteger(n) || n < 1 || n > 31) throw userError(money ? 'Enter a balance with up to two decimal places' : 'Cutoff and due day must be between 1 and 31');
+      if (key === 'monthly_payment' && n < 0) throw userError('Monthly payment cannot be negative');
+      result[key] = money ? cents / 100 : n;
     }
   }
   return result;

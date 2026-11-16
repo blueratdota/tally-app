@@ -1,8 +1,8 @@
 import { usePeople, useCategoryStyle, CategoryLabel } from '@/lib/household';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CalendarDays, ListFilter, StickyNote } from 'lucide-react';
-import { peso, CATEGORIES, INCOME_CATEGORIES, localDate } from '@/lib/format';
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CalendarDays, ChevronLeft, ChevronRight, ListFilter, StickyNote } from 'lucide-react';
+import { peso, CATEGORIES, INCOME_CATEGORIES, localDate, isAdjustment } from '@/lib/format';
 import { api, type Transaction, type Account, type Plan, type View } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,7 +15,8 @@ import DataImport, { exportTransactions } from '@/components/DataImport';
 
 type AccountName = (id?: string) => string;
 
-function TxLine({ t, accountName, onVoid, onEdit, hideDate }: { t: Transaction; hideDate?: boolean; accountName: AccountName; onVoid: (id: string) => void; onEdit: (t: Transaction) => void }) {
+type LineProps = { accountName: AccountName; onVoid: (id: string) => void; onEdit: (t: Transaction) => void; onCategory: (c: string) => void };
+function TxLine({ t, accountName, onVoid, onEdit, onCategory, hideDate }: { t: Transaction; hideDate?: boolean } & LineProps) {
   const PEOPLE = usePeople(); const style = useCategoryStyle()(t.category);
   const [open, setOpen] = useState(false);
   const who = t.person && PEOPLE[t.person] ? PEOPLE[t.person] + ' · ' : '';
@@ -40,7 +41,8 @@ function TxLine({ t, accountName, onVoid, onEdit, hideDate }: { t: Transaction; 
           <Button variant="ghost" size="sm" onClick={() => onVoid(t.id)} className="text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive">Void</Button>
         </div>
       </div>
-      {open && <div className="col-span-full rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed">{t.note ? <p className="whitespace-pre-wrap break-words">{t.note}</p> : <p className="text-muted-foreground">No note. Use Edit to add one.</p>}</div>}
+      {open && <div className="col-span-full rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed">{t.note ? <p className="whitespace-pre-wrap break-words">{t.note}</p> : <p className="text-muted-foreground">No note. Use Edit to add one.</p>}
+        {t.type !== 'transfer' && <Button variant="link" size="sm" className="mt-1 h-auto p-0 text-xs" onClick={() => onCategory(t.category || 'Other')}>All {t.category || 'Other'} transactions →</Button>}</div>}
     </div>
   );
 }
@@ -53,17 +55,16 @@ function cardCycle(cutoffDay: number, today: string) {
   const lastIdx = on(m - 1) <= today ? m - 1 : m - 2;
   return { prev: on(lastIdx - 1), last: on(lastIdx), next: on(lastIdx + 1) };
 }
-const dayAfter = (d: string) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + 1); return x.toLocaleDateString('en-CA'); };
 const shortDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 const charges = (txs: Transaction[], cardId: string) => txs.reduce((n, t) => n + (t.type !== 'income' && t.from_account_id === cardId ? Number(t.amount) : 0), 0);
 
-function TxBlock({ title, note, txs, accountName, onVoid, onEdit, byDate }: { title: string; note?: ReactNode; txs: Transaction[]; byDate?: boolean; accountName: AccountName; onVoid: (id: string) => void; onEdit: (t: Transaction) => void }) {
+function TxBlock({ title, note, txs, byDate, ...lineProps }: { title: string; note?: ReactNode; txs: Transaction[]; byDate?: boolean } & LineProps) {
   const [limit, setLimit] = useState(100);
   const shown = txs.slice(0, limit);
-  const line = (t: Transaction) => <TxLine key={t.id} t={t} hideDate={byDate} accountName={accountName} onVoid={onVoid} onEdit={onEdit} />;
+  const line = (t: Transaction) => <TxLine key={t.id} t={t} hideDate={byDate} {...lineProps} />;
   // Expenses per day across every matching transaction (refunds are negative, so they reduce it).
   const spent = new Map<string, number>();
-  for (const t of txs) if (t.type === 'expense') spent.set(t.date, (spent.get(t.date) || 0) + Number(t.amount));
+  for (const t of txs) if (t.type === 'expense' && !isAdjustment(t)) spent.set(t.date, (spent.get(t.date) || 0) + Number(t.amount));
   const days = [...new Set(shown.map(t => t.date))];
   return (
     <Card className="overflow-hidden">
@@ -88,27 +89,38 @@ function FilterSelect({ id, label, value, onChange, options, disabled }: { id: s
   return <div className="grid min-w-0 gap-2"><Label htmlFor={id}>{label}</Label><Select value={value} onValueChange={onChange} disabled={disabled}><SelectTrigger id={id}><SelectValue /></SelectTrigger><SelectContent>{options.map(([id, label]) => <SelectItem key={id} value={id}>{label}</SelectItem>)}</SelectContent></Select></div>;
 }
 
-export default function Transactions({ initialAccount, transactions, allTransactions, accounts, plans, view, accountName, reload, onEdit }: { initialAccount?: string; transactions: Transaction[]; allTransactions: Transaction[]; accounts: Account[]; plans: Plan[]; view: View; accountName: AccountName; reload: () => Promise<void>; onEdit: (t: Transaction) => void }) {
+export default function Transactions({ initialAccount, initialCategory, initialMonth, transactions, allTransactions, accounts, plans, view, accountName, reload, onEdit }: { initialAccount?: string; initialCategory?: string; initialMonth?: string; transactions: Transaction[]; allTransactions: Transaction[]; accounts: Account[]; plans: Plan[]; view: View; accountName: AccountName; reload: () => Promise<void>; onEdit: (t: Transaction) => void }) {
   const names = usePeople();
-  // Default view: this month's posted transactions (1st of the month to today).
-  const monthStart = localDate().slice(0, 7) + '-01';
+  // One month at a time (default: this month, posted only). '' = all months, used when opening a card or a category.
+  const thisMonth = localDate().slice(0, 7);
   const openedCard = accounts.find(a => a.id === initialAccount && a.type === 'creditcard');
   const openedCycle = openedCard && cardCycle(Number(openedCard.cutoff_day), localDate());
-  const [query, setQuery] = useState(''); const [from, setFrom] = useState(openedCycle ? dayAfter(openedCycle.prev) : initialAccount ? '' : monthStart); const [to, setTo] = useState(openedCycle?.next || ''); const [account, setAccount] = useState(initialAccount || 'all'); const [category, setCategory] = useState('all'); const [person, setPerson] = useState('all'); const [type, setType] = useState('all'); const [timing, setTiming] = useState(openedCycle ? 'all' : 'posted');
+  const [query, setQuery] = useState(''); const [month, setMonthRaw] = useState(initialMonth || (initialAccount || initialCategory ? '' : thisMonth)); const [account, setAccount] = useState(initialAccount || 'all'); const [category, setCategory] = useState(initialCategory || 'all'); const [person, setPerson] = useState('all'); const [type, setType] = useState('all'); const [timing, setTiming] = useState(openedCycle ? 'all' : 'posted');
   const [importing, setImporting] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false); // phones only; always shown from sm up
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Future months only hold scheduled charges, so they show everything; this month hides what hasn't posted yet.
+  const setMonth = (m: string) => { setMonthRaw(m); if (!openedCycle) setTiming(m > thisMonth ? 'all' : 'posted'); };
+  const showCategory = (c: string) => { setCategory(c); setMonth(''); window.scrollTo(0, 0); };
+  // Month-to-date totals for the header: posted income/expenses this calendar month, in the current view.
   const effectivePerson = view === 'all' ? person : view;
   const categories = [...new Set([...CATEGORIES, ...INCOME_CATEGORIES, ...allTransactions.filter(t => t.type !== 'transfer').map(t => t.category || 'Other')])].sort();
   const accountOptions: [string, string][] = accounts.map(a => [a.id, a.name]);
   for (const id of new Set(allTransactions.flatMap(t => [t.from_account_id, t.to_account_id]).filter(Boolean))) if (!accounts.some(a => a.id === id)) accountOptions.push([id!, 'Archived account · ' + id!.slice(0, 8)]);
-  const filtered = transactions.filter(t => {
+  // Everything but the type filter, so both header totals stay visible while one of them is selected.
+  const untyped = transactions.filter(t => {
     const text = [t.description, t.category, t.date, t.amount, peso(t.amount), t.person ? names[t.person] : '', accountName(t.from_account_id), accountName(t.to_account_id)].join(' ').toLowerCase();
-    return text.includes(query.trim().toLowerCase()) && (!from || t.date >= from) && (!to || t.date <= to) && (account === 'all' || t.from_account_id === account || t.to_account_id === account) && (category === 'all' || (t.type !== 'transfer' && (t.category || 'Other') === category)) && (effectivePerson === 'all' || t.person === effectivePerson) && (type === 'all' || t.type === type) && (timing === 'all' || (timing === 'month' ? t.date.slice(0, 7) <= localDate().slice(0, 7) : timing === 'scheduled' ? t.date > localDate() : t.date <= localDate()));
+    return text.includes(query.trim().toLowerCase()) && (!month || t.date.startsWith(month)) && (account === 'all' || t.from_account_id === account || t.to_account_id === account) && (category === 'all' || (t.type !== 'transfer' && (t.category || 'Other') === category)) && (effectivePerson === 'all' || t.person === effectivePerson) && (timing === 'all' || (timing === 'month' ? t.date.slice(0, 7) <= localDate().slice(0, 7) : timing === 'scheduled' ? t.date > localDate() : t.date <= localDate()));
   });
   // Installment charges get their own block: linked to an installment plan, or imported with an "(n/m)" suffix.
   const installmentPlans = new Set(plans.filter(p => p.kind === 'installment').map(p => p.id));
   // A single card picked in the Account filter shows its transactions by billing cycle instead.
   const card = accounts.find(a => a.id === account && a.type === 'creditcard');
+  const lineProps = { accountName, onVoid: (id: string) => handleVoid(id), onEdit, onCategory: showCategory };
+  // Header totals follow every filter, so a category view shows what that category cost.
+  const filtered = untyped.filter(t => type === 'all' || t.type === type);
+  const total = (kind: string) => untyped.filter(t => t.type === kind && !isAdjustment(t)).reduce((s, t) => s + Number(t.amount), 0);
+  const monthName = (m: string) => new Date(m + '-01T00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const step = (n: number) => { const [y, m] = (month || thisMonth).split('-').map(Number); setMonth(new Date(y, m - 1 + n, 1).toLocaleDateString('en-CA').slice(0, 7)); };
   const isInstallment = (t: Transaction) => installmentPlans.has(t.plan_id!) || /\(\d+\s*\/\s*\d+\)\s*$/.test(t.description);
   // Void asks first: it can't be undone from the app.
   const [voiding, setVoiding] = useState<Transaction | null>(null);
@@ -126,21 +138,33 @@ export default function Transactions({ initialAccount, transactions, allTransact
   return (
     <div>
       <div className="mb-6 flex flex-wrap justify-between gap-4"><div><h2 className="text-3xl font-bold tracking-tight">Transactions</h2><p className="text-sm text-muted-foreground mt-2">Search, review, and manage your ledger.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setImporting(true)}>Import CSV</Button><Button variant="outline" disabled={!filtered.length} onClick={() => exportTransactions(filtered, accounts, names)}>Export filtered CSV</Button></div></div>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <Button variant="outline" size="icon" aria-label="Previous month" disabled={!month} onClick={() => step(-1)}><ChevronLeft aria-hidden="true" /></Button>
+        <div className="min-w-0 text-center"><p className="truncate text-lg font-semibold" aria-live="polite">{month ? monthName(month) : 'All months'}</p>
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setMonth(month ? '' : thisMonth)}>{month ? 'Show all months' : 'Back to this month'}</Button></div>
+        <Button variant="outline" size="icon" aria-label="Next month" disabled={!month} onClick={() => step(1)}><ChevronRight aria-hidden="true" /></Button>
+      </div>
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-5">
+        {([['expense', 'Expenses', 'text-destructive'], ['income', 'Income', 'text-primary']] as const).map(([kind, label, tone]) => <button key={kind} type="button" aria-pressed={type === kind} onClick={() => setType(type === kind ? 'all' : kind)}
+          className={cn('min-w-0 rounded-2xl border bg-card p-4 text-left shadow-[0_2px_8px_rgba(24,46,36,0.025)] transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5', type === kind && 'border-primary ring-1 ring-primary')}>
+          {/* Toggles the type filter: click once to show only this type, again to show everything. */}
+          <span className="block truncate text-xs sm:text-sm text-muted-foreground">{label}{category !== 'all' && ` · ${category}`}{type === kind && ' · showing only'}</span>
+          <span className={cn('mt-1 block text-xl sm:text-2xl font-bold tabular-nums', tone)}>{peso(total(kind))}</span>
+        </button>)}
+      </div>
       <Card className="p-4 sm:p-5 mb-5 space-y-4">
         <div className="grid gap-2"><Label htmlFor="tx-search">Search transactions</Label><Input id="tx-search" type="search" placeholder="Description, amount, account, category…" value={query} onChange={e => setQuery(e.target.value)} /></div>
-        <Button type="button" variant="outline" className="w-full justify-between sm:hidden" aria-expanded={filtersOpen} aria-controls="tx-filters" onClick={() => setFiltersOpen(o => !o)}>
+        <Button type="button" variant="outline" className="w-full justify-between" aria-expanded={filtersOpen} aria-controls="tx-filters" onClick={() => setFiltersOpen(o => !o)}>
           <span className="flex items-center gap-2"><ListFilter className="size-4" aria-hidden="true" />{filtersOpen ? 'Hide filters' : 'Filters'}</span>
-          <span className="text-xs font-normal text-muted-foreground">{[from && `from ${shortDate(from)}`, to && `to ${shortDate(to)}`, card?.name, timing !== 'all' && timing].filter(Boolean).join(' · ')}</span>
+          <span className="text-xs font-normal text-muted-foreground">{[accountOptions.find(([id]) => id === account)?.[1], category !== 'all' && category, type !== 'all' && type, timing !== 'all' && timing].filter(Boolean).join(' · ')}</span>
         </Button>
-        <div id="tx-filters" className={cn('gap-4 sm:grid sm:grid-cols-2 lg:grid-cols-4', filtersOpen ? 'grid' : 'hidden')}>
-          <div className="grid min-w-0 gap-2"><Label htmlFor="tx-from">From date</Label><Input id="tx-from" type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} /></div>
-          <div className="grid min-w-0 gap-2"><Label htmlFor="tx-to">To date</Label><Input id="tx-to" type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} /></div>
+        <div id="tx-filters" className={cn('gap-4 sm:grid-cols-2 lg:grid-cols-4', filtersOpen ? 'grid' : 'hidden')}>
           <FilterSelect id="tx-account" label="Account" value={account} onChange={setAccount} options={[["all", "All accounts"], ...accountOptions]} />
           <FilterSelect id="tx-category" label="Category" value={category} onChange={setCategory} options={[["all", "All categories"], ...categories.map(c => [c, <CategoryLabel name={c} />] as [string, ReactNode])]} />
           <FilterSelect id="tx-person" label="Person" value={effectivePerson} onChange={setPerson} disabled={view !== 'all'} options={[["all", "All people"], ...Object.entries(names)]} />
           <FilterSelect id="tx-type" label="Transaction type" value={type} onChange={setType} options={[["all", "All types"], ["income", "Income"], ["expense", "Expense"], ["transfer", "Transfer"]]} />
           <FilterSelect id="tx-timing" label="Timing" value={timing} onChange={setTiming} options={[["month", "Through this month"], ["all", "All dates"], ["posted", "Posted"], ["scheduled", "Scheduled"]]} />
-          <Button variant="ghost" className="self-end" onClick={() => { setQuery(''); setFrom(monthStart); setTo(''); setAccount('all'); setCategory('all'); setPerson('all'); setType('all'); setTiming('posted'); }}>Reset filters</Button>
+          <Button variant="ghost" className="self-end" onClick={() => { setQuery(''); setAccount('all'); setCategory('all'); setPerson('all'); setType('all'); setTiming(month > thisMonth ? 'all' : 'posted'); }}>Reset filters</Button>
         </div>
       </Card>
       <div className="space-y-5">
@@ -156,11 +180,11 @@ export default function Transactions({ initialAccount, transactions, allTransact
           ];
           const blocks = sections.map(([title, note, inRange]) => [title, note, filtered.filter(t => inRange(t.date))] as const).filter(([, , txs]) => txs.length);
           return blocks.length
-            ? blocks.map(([title, note, txs]) => <TxBlock key={title} byDate title={title} note={<>{note} · Charges {peso(charges(txs, card.id))}</>} txs={txs} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />)
-            : <TxBlock title={card.name} txs={[]} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />;
+            ? blocks.map(([title, note, txs]) => <TxBlock key={title} byDate title={title} note={<>{note} · Charges {peso(charges(txs, card.id))}</>} txs={txs} {...lineProps} />)
+            : <TxBlock title={card.name} txs={[]} {...lineProps} />;
         })() : <>
-        <TxBlock title="All activity" byDate txs={filtered.filter(t => !isInstallment(t))} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />
-        <TxBlock title="Installments" txs={filtered.filter(isInstallment)} accountName={accountName} onVoid={handleVoid} onEdit={onEdit} />
+        <TxBlock title="All activity" byDate txs={filtered.filter(t => !isInstallment(t))} {...lineProps} />
+        <TxBlock title="Installments" txs={filtered.filter(isInstallment)} {...lineProps} />
         </>}
       </div>
       <AlertDialog open={!!voiding} onOpenChange={o => !o && setVoiding(null)}>

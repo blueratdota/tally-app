@@ -215,6 +215,7 @@ export default function TxModal({ accounts, history, transaction, onClose, onSav
             <Label htmlFor="note">Note (optional)</Label>
             <textarea id="note" rows={3} maxLength={1000} placeholder="Anything worth remembering about this" value={note} onChange={e => setNote(e.target.value)}
               className="block min-h-20 w-full resize-y rounded-xl border border-input bg-muted/50 px-3.5 py-2.5 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm" />
+            {transaction && /\(\d+\s*\/\s*\d+\)\s*$/.test(transaction.description) && <p className="text-xs text-muted-foreground">Applies to every charge of this installment.</p>}
           </div>
 
           {error && <div role="alert" className="text-destructive text-sm">{error}</div>}

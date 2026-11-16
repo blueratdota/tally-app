@@ -181,7 +181,7 @@ function CashflowChart({ rows, period }: { rows: PeriodRow[]; period: Period }) 
 const th = 'bg-muted/50 px-4 py-3 text-left font-semibold text-muted-foreground text-[11px]';
 const td = 'px-4 py-3 text-right whitespace-nowrap';
 
-function PeriodTable({ rows, period }: { rows: PeriodRow[]; period: Period }) {
+function PeriodTable({ rows, period, onMonth }: { rows: PeriodRow[]; period: Period; onMonth: (m: string) => void }) {
   return (
     <Card className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${PERIODS[period].label} cash flow; scroll for more columns`}>
       <table className="w-full min-w-[540px] text-sm">
@@ -193,7 +193,9 @@ function PeriodTable({ rows, period }: { rows: PeriodRow[]; period: Period }) {
           {[...rows].reverse().map(r => {
             const net = r.income - r.spent;
             return <tr key={r.key}>
-              <td className="px-3 py-2 whitespace-nowrap">{labelOf(r.key, period, true)}</td>
+              <td className="px-3 py-2 whitespace-nowrap">{period === 'month'
+                ? <button type="button" className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" aria-label={`Show ${labelOf(r.key, period, true)} transactions`} onClick={() => onMonth(r.key)}>{labelOf(r.key, period, true)}</button>
+                : labelOf(r.key, period, true)}</td>
               <td className={td}>{peso(r.income)}</td>
               <td className={td}>{peso(r.spent)}</td>
               <td className={cn(td, 'font-medium', net < 0 ? 'text-destructive' : 'text-primary')}>{peso(net)}</td>
@@ -206,7 +208,7 @@ function PeriodTable({ rows, period }: { rows: PeriodRow[]; period: Period }) {
   );
 }
 
-function CategoryTable({ transactions, current, period, view }: { transactions: Transaction[]; current: string; period: Period; view: View }) {
+function CategoryTable({ transactions, current, period, view, onCategory }: { transactions: Transaction[]; current: string; period: Period; view: View; onCategory: (c: string) => void }) {
   const PEOPLE = usePeople(); const style = useCategoryStyle();
   const prev = [1, 2, 3].map(n => shift(current, period, -n));
   const now: Record<string, number> = {}, avg: Record<string, number> = {};
@@ -238,7 +240,7 @@ function CategoryTable({ transactions, current, period, view }: { transactions: 
           {cats.map(c => {
             const n = now[c] || 0, a = avg[c] || 0, diff = a ? (n - a) / a : null;
             return <tr key={c}>
-              <td className="px-3 py-2"><CategoryLabel name={c} /></td>
+              <td className="px-3 py-2"><button type="button" className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" aria-label={`Show ${c} transactions`} onClick={() => onCategory(c)}><CategoryLabel name={c} /></button></td>
               <td className="px-3 py-2">
                 <div className="relative h-2.5 rounded-sm bg-muted">
                   <div className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(n / max) * 100}%`, background: style(c).color }} />
@@ -260,7 +262,7 @@ function CategoryTable({ transactions, current, period, view }: { transactions: 
   );
 }
 
-export default function Insights({ transactions, history, view, onViewChange }: { transactions: Transaction[]; history: NetWorthPoint[]; view: View; onViewChange: (view: View) => void }) {
+export default function Insights({ transactions, history, view, onViewChange, onCategory, onMonth }: { transactions: Transaction[]; history: NetWorthPoint[]; view: View; onViewChange: (view: View) => void; onCategory: (c: string) => void; onMonth: (m: string) => void }) {
   const PEOPLE = usePeople();
   const [period, setPeriod] = useState<Period>('month');
   const { count, now } = PERIODS[period];
@@ -316,11 +318,11 @@ export default function Insights({ transactions, history, view, onViewChange }: 
       <section className="space-y-3">
         <CashflowChart key={view + period} rows={rows} period={period} />
         <p className="text-xs text-muted-foreground sm:hidden">Swipe tables sideways to see all columns.</p>
-        <PeriodTable rows={rows} period={period} />
+        <PeriodTable rows={rows} period={period} onMonth={onMonth} />
       </section>
       <section>
         <h2 className="font-display text-lg font-semibold mb-2">Spending by category</h2>
-        <CategoryTable transactions={transactions} current={current} period={period} view={view} />
+        <CategoryTable transactions={transactions} current={current} period={period} view={view} onCategory={onCategory} />
       </section>
     </div>
   );

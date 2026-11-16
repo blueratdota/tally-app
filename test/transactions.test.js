@@ -30,7 +30,7 @@ const fake = { spreadsheets: {
   values: {
     update: async ({ range, requestBody, valueInputOption }) => {
       assert.equal(valueInputOption, 'RAW', 'ordinary writes must preserve literal text');
-      const match = /^Accounts!A(\d+):I\d+$/.exec(range);
+      const match = /^Accounts!A(\d+):J\d+$/.exec(range);
       if (match) data.Accounts[Number(match[1]) - 2] = structuredClone(requestBody.values[0]);
     },
     get: async ({ range }) => ({ data: { values: structuredClone(data[range.split('!')[0]]) } }),
@@ -143,6 +143,13 @@ const edit = (previous, patch = {}) => post({ ...previous, ...patch, action: 'up
   const noted = await post({ type: 'expense', date: today, amount: 5, description: 'Snack', category: 'Dining', from_account_id: 's', person: 'p1', note: '  shared with Ana \n second line ' });
   assert.equal(JSON.parse(noted.body).transaction.note, 'shared with Ana \n second line', 'notes are saved, trimmed');
   assert.equal((await post({ type: 'expense', date: today, amount: 5, description: 'x', from_account_id: 's', person: 'p1', note: 'n'.repeat(1001) })).statusCode, 400, 'overlong notes are refused');
+  // A note on one installment charge is copied to every charge of that installment, and only those.
+  const plan = JSON.parse((await post({ type: 'expense', date: today, amount: 300, description: 'Phone', category: 'Shopping', from_account_id: 'cc', person: 'p1', installments: 3 })).body).transactions;
+  const other = JSON.parse((await post({ type: 'expense', date: today, amount: 90, description: 'Tablet', category: 'Shopping', from_account_id: 'cc', person: 'p1', installments: 3 })).body).transactions;
+  const first = await read(plan[0].id);
+  assert.equal((await edit(first, { note: 'Store warranty until 2027' })).statusCode, 200);
+  for (const t of plan) assert.equal((await read(t.id)).note, 'Store warranty until 2027', 'installment note shared');
+  assert.equal((await read(other[1].id)).note || '', '', 'other installments untouched');
   const transfer = await post({ type: 'transfer', date: today, amount: 1, description: 'Move', category: 'Salary', from_account_id: 's', to_account_id: 's2', person: 'p1' });
   assert.equal(transfer.statusCode, 200, transfer.body);
   assert.equal(JSON.parse(transfer.body).transaction.category, '', 'transfers carry no category');
