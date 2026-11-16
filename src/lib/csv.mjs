@@ -49,3 +49,21 @@ export function statementDate(value, format) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(result) || !Number.isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== result) throw new Error('Invalid date');
   return result;
 }
+
+export function statementTransaction(amountRaw, debit, credit, explicit, kind) {
+  const debitAmount = debit ? statementAmount(debit) : 0;
+  const creditAmount = credit ? statementAmount(credit) : 0;
+  if (!amountRaw && debitAmount && creditAmount) throw new Error('A row cannot contain both a debit and a credit');
+  let amount = amountRaw ? statementAmount(amountRaw) : Math.abs(debitAmount || creditAmount);
+  let type;
+  if (explicit) {
+    const types = { income: 'income', credit: 'income', expense: 'expense', debit: 'expense', refund: 'expense', transfer: 'transfer' };
+    if (!Object.hasOwn(types, explicit)) throw new Error('Type must be income, expense, transfer, debit, credit, or refund');
+    type = types[explicit];
+    if (explicit === 'refund') amount = -Math.abs(amount);
+    else if (explicit !== 'expense') amount = Math.abs(amount);
+  } else if (!amountRaw && (debit || credit)) type = debitAmount ? 'expense' : 'income';
+  else if (kind === 'expense') type = 'expense';
+  else { type = kind === 'income' ? 'income' : amount < 0 ? 'expense' : 'income'; amount = Math.abs(amount); }
+  return { type, amount };
+}

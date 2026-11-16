@@ -54,6 +54,7 @@ function computeCreditCard(account, transactions, today = householdToday()) {
   const todayStr = isoDate(today);
   const nextMonth = isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 1)).slice(0, 7);
   let billed = 0, unbilled = 0, paid = 0, future = 0, dueNextMonth = 0;
+  const statements = new Map();
 
   for (const t of transactions) {
     if (t.voided) continue;
@@ -64,7 +65,15 @@ function computeCreditCard(account, transactions, today = householdToday()) {
         continue;
       }
       const d = new Date(t.date + 'T00:00:00');
-      if (d <= cutoff) billed += Number(t.amount);
+      if (d <= cutoff) {
+        billed += Number(t.amount);
+        if (Number(t.amount) > 0) {
+          let statement = lastCutoffDate(account.cutoff_day, d);
+          if (d > statement) statement = new Date(statement.getFullYear(), statement.getMonth() + 1, Math.min(Number(account.cutoff_day), daysInMonth(statement.getFullYear(), statement.getMonth() + 1)));
+          const key = isoDate(statement);
+          statements.set(key, (statements.get(key) || 0) + Math.round(Number(t.amount) * 100));
+        }
+      }
       else unbilled += Number(t.amount);
     }
     if (t.type === 'transfer' && t.to_account_id === account.id && t.date <= todayStr) {
@@ -81,12 +90,30 @@ function computeCreditCard(account, transactions, today = householdToday()) {
   }
   if (outstanding < 0) outstanding = 0; // ponytail: clamp only, no credit-balance carry tracked
 
+  let dueDate = null, daysUntilDue = null;
+  if (round2(current) > 0 && Number(account.due_day) >= 1 && Number(account.due_day) <= 31) {
+    // Payments and billed refunds clear the oldest statement first.
+    let credits = Math.round(paid * 100) + [...statements.values()].reduce((n, amount) => n + amount, 0) - Math.round(billed * 100);
+    for (const [date, amount] of [...statements].sort(([a], [b]) => a.localeCompare(b))) {
+      if (credits >= amount) { credits -= amount; continue; }
+      const statement = new Date(date + 'T00:00:00');
+      const dueAt = month => new Date(statement.getFullYear(), month, Math.min(Number(account.due_day), daysInMonth(statement.getFullYear(), month)));
+      let due = dueAt(statement.getMonth());
+      if (due <= statement) due = dueAt(statement.getMonth() + 1);
+      dueDate = isoDate(due);
+      daysUntilDue = Math.round((Date.parse(dueDate) - Date.parse(todayStr)) / 864e5);
+      break;
+    }
+  }
+
   return {
     current: round2(current),
     outstanding: round2(outstanding),
     total: round2(current + outstanding),
     future: round2(future),             // all scheduled charges still to come
     dueNextMonth: round2(dueNextMonth), // the part of that landing next calendar month
+    dueDate,
+    daysUntilDue,
     cutoffDate: cutoff
   };
 }

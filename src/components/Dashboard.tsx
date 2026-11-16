@@ -7,17 +7,7 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { ArrowUpRight, Wallet, CreditCard, Landmark, CalendarDays } from 'lucide-react';
 
-// Days until the card's next due day (clamped to short months).
-function daysUntilDue(dueDay: number) {
-  const now = new Date(localDate() + 'T12:00:00');
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const at = (y: number, m: number) => new Date(y, m, Math.min(dueDay, new Date(y, m + 1, 0).getDate()));
-  let due = at(today.getFullYear(), today.getMonth());
-  if (due < today) due = at(today.getFullYear(), today.getMonth() + 1);
-  return Math.round((due.getTime() - today.getTime()) / 864e5);
-}
-
-const dueText = (d: number) => (d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`);
+const dueText = (d: number) => d < 0 ? `${-d} ${d === -1 ? 'day' : 'days'} overdue` : d === 0 ? 'due today' : d === 1 ? 'due tomorrow' : `due in ${d} days`;
 
 function PersonSpending({ name, data }: { name: string; data: PS }) {
   const top = Object.entries(data.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -47,7 +37,8 @@ interface Props {
 export default function Dashboard({ netWorth, spending, byType, setPage, view }: Props) {
   const PEOPLE = usePeople();
   const cards = byType('creditcard')
-    .map(a => ({ ...a, days: daysUntilDue(Number(a.due_day)) }))
+    .filter(a => (a.current ?? 0) > 0 && a.daysUntilDue != null)
+    .map(a => ({ ...a, days: a.daysUntilDue! }))
     .sort((a, b) => a.days - b.days);
   const empty = !netWorth.savings && !netWorth.cardDebt && !netWorth.loanDebt;
 
@@ -106,7 +97,7 @@ export default function Dashboard({ netWorth, spending, byType, setPage, view }:
             {cards.length ? <ul className="divide-y">{cards.map(a => <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
               <div className="min-w-0 flex-1"><p className="font-semibold text-sm break-words">{a.name}</p><p className={cn('mt-1 text-xs', a.days <= 3 ? 'text-destructive' : 'text-muted-foreground')}>{dueText(a.days)}</p></div>
               <span className="text-sm font-bold break-all">{peso(a.current)}</span>
-            </li>)}</ul> : <p className="p-6 text-sm text-muted-foreground">Your credit card due dates will appear here.</p>}
+            </li>)}</ul> : <p className="p-6 text-sm text-muted-foreground">No billed card payments due.</p>}
           </Card>
         </section>
       </div>

@@ -62,6 +62,7 @@ const post = body => handler({ httpMethod: 'POST', headers: { 'x-tally-passcode'
   assert.equal(written.length, 3, 'invalid requests must not write rows');
   const normal = { ...payload }; delete normal.installments;
   assert.equal((await post(normal)).statusCode, 200);
-  assert.equal(singles, 1, 'ordinary transactions still use the existing path');
+  assert.equal(singles, 0, 'ordinary transactions must also use the atomic writer');
+  assert.equal(batches, 2);
   console.log('All installment checks passed.');
 })().catch(err => { console.error(err); process.exitCode = 1; });

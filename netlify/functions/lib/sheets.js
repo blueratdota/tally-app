@@ -111,7 +111,7 @@ async function appendAccount(account) {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2`, valueInputOption: 'USER_ENTERED',
+    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2`, valueInputOption: 'RAW',
     requestBody: { values: [objectToRow(account, ACCOUNTS_COLS)] }
   });
 }
@@ -119,13 +119,15 @@ async function appendAccount(account) {
 // Finds the account's sheet row and overwrites it with the merged fields.
 async function updateAccount(id, patch) {
   const sheets = await getSheetsClient();
-  const accounts = await listAccounts();
-  const idx = accounts.findIndex(a => a.id === id);
+  await ensureSheetsExist();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A2:I` });
+  const rows = res.data.values || [];
+  const idx = rows.findIndex(row => row[0] === id);
   if (idx === -1) throw new Error('Account not found');
-  const merged = { ...accounts[idx], ...patch };
+  const merged = { ...rowToObject(rows[idx], ACCOUNTS_COLS), ...patch };
   const rowNum = idx + 2; // +2: header row + 1-indexing
   await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:I${rowNum}`, valueInputOption: 'USER_ENTERED',
+    spreadsheetId: SHEET_ID, range: `${ACCOUNTS_TAB}!A${rowNum}:I${rowNum}`, valueInputOption: 'RAW',
     requestBody: { values: [objectToRow(merged, ACCOUNTS_COLS)] }
   });
   return merged;
@@ -142,7 +144,7 @@ async function appendTransaction(tx) {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2`, valueInputOption: 'USER_ENTERED',
+    spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2`, valueInputOption: 'RAW',
     requestBody: { values: [objectToRow(tx, TX_COLS)] }
   });
 }
@@ -152,7 +154,7 @@ async function appendTransactions(txs) {
   await ensureSheetsExist();
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2`, valueInputOption: 'USER_ENTERED',
+    spreadsheetId: SHEET_ID, range: `${TX_TAB}!A2`, valueInputOption: 'RAW',
     requestBody: { values: txs.map(t => objectToRow(t, TX_COLS)) }
   });
 }

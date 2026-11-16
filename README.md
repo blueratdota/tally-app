@@ -10,7 +10,7 @@ React app (Vite build)  →  Netlify Functions  →  Google Sheets API   (all fi
                                               →  Cloudinary API       (card logo images)
 ```
 
-No login — anyone with the site link can use it, same as before.
+Access requires the shared household passcode configured in `APP_PASSCODE`. There are no separate user logins.
 
 ---
 
@@ -65,6 +65,7 @@ the CSS), so use Netlify's Git-based deploy, not drag-and-drop:
 
    | Key | Value |
    |---|---|
+   | `APP_PASSCODE` | a long shared household passcode; required to unlock the app |
    | `SHEET_ID` | the Sheet ID from Part 1 step 2 |
    | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | the `client_email` from Part 1 step 7 |
    | `GOOGLE_PRIVATE_KEY` | the `private_key` from Part 1 step 7 (paste it exactly, including the `-----BEGIN/END-----` lines) |
@@ -73,8 +74,8 @@ the CSS), so use Netlify's Git-based deploy, not drag-and-drop:
    | `CLOUDINARY_API_SECRET` | from Part 2 |
 
 5. Deploy. Netlify will run `npm install` for the functions automatically.
-6. Open your new Netlify URL — the Dashboard should load with zero accounts
-   and zero transactions (that's expected on a fresh sheet).
+6. Open your new Netlify URL and enter your `APP_PASSCODE`. The Dashboard
+   should load with zero accounts and transactions on a fresh sheet.
 
 **Want to test locally first?** Run `npm install`, add the same variables to
 a `.env` file, and:
@@ -87,6 +88,8 @@ a `.env` file, and:
 ---
 
 ## Using it
+
+Loan payments must be dated today or earlier. Card reminders keep the oldest unpaid statement due date and show overdue payments.
 
 - **+ button** (bottom right): add **Income** (goes into a savings account),
   **Expense** (charged to a savings account or a credit card), or **Transfer**

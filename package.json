@@ -6,7 +6,7 @@
     "dev": "vite",
     "local": "node --env-file-if-exists=.env dev/local.mjs",
     "build": "vite build",
-    "test": "node test/balances.test.js && node test/installments.test.js && node test/transactions.test.js && node test/plans.test.js && node test/csv.test.mjs && node test/schema.test.js",
+    "test": "node test/balances.test.js && node test/installments.test.js && node test/transactions.test.js && node test/plans.test.js && node test/csv.test.mjs && node test/schema.test.js && node test/client.test.cjs",
     "typecheck": "tsc"
   },
   "dependencies": {

@@ -118,3 +118,27 @@ assert.strictEqual(computeCreditCard(card, [...cardTxs, { type: 'transfer', amou
 const { householdToday } = require('../netlify/functions/lib/balances');
 assert.strictEqual(householdToday(new Date('2026-11-15T16:30:00Z')).toLocaleDateString('en-CA'), '2026-11-16');
 assert.strictEqual(monthlySpending([{ type: 'expense', amount: 100, person: 'p1', date: '2026-11-20' }], '2026-11', new Date(2026, 10, 15)).total, 0);
+
+// An unpaid statement keeps its original due date across later cutoffs.
+{
+  const card = { id: 'due', cutoff_day: 20, due_day: 5 };
+  const charges = [
+    { type: 'expense', amount: 100, from_account_id: 'due', date: '2026-10-10' },
+    { type: 'expense', amount: 50, from_account_id: 'due', date: '2026-10-25' }
+  ];
+  const on = (date, tx = charges, account = card) => computeCreditCard(account, tx, new Date(date + 'T12:00:00'));
+  assert.equal(on('2026-11-04').daysUntilDue, 1);
+  assert.equal(on('2026-11-05').daysUntilDue, 0);
+  assert.equal(on('2026-11-10').daysUntilDue, -5);
+  assert.equal(on('2026-11-25').dueDate, '2026-11-05');
+  const partial = [...charges, { type: 'transfer', amount: 40, to_account_id: 'due', date: '2026-11-01' }];
+  assert.equal(on('2026-11-25', partial).dueDate, '2026-11-05');
+  const paid = [...charges, { type: 'transfer', amount: 100, to_account_id: 'due', date: '2026-11-01' }];
+  assert.equal(on('2026-11-10', paid).dueDate, null, 'paid statements have no overdue reminder');
+  assert.equal(on('2026-11-25', paid).dueDate, '2026-12-05');
+  const refund = [...charges, { type: 'expense', amount: -100, from_account_id: 'due', date: '2026-11-10' }];
+  assert.equal(on('2026-11-25', refund).dueDate, '2026-12-05');
+  const short = { id: 'due', cutoff_day: 31, due_day: 31 };
+  assert.equal(on('2026-02-28', [{ type: 'expense', amount: 1, from_account_id: 'due', date: '2026-01-31' }], short).dueDate, '2026-02-28');
+  assert.equal(on('2026-03-01', [{ type: 'expense', amount: 1, from_account_id: 'due', date: '2026-02-28' }], short).dueDate, '2026-03-31');
+}

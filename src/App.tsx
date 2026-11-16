@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { ChartNoAxesColumnIncreasing, LayoutDashboard, ChartSpline, CreditCard, Landmark, Wallet, ArrowLeftRight, Plus, Settings, CalendarClock } from 'lucide-react';
 import { api, setPasscode, hasPasscode, ApiError, type Account, type AccountType, type NetWorth, type NetWorthPoint, type Spending, type Transaction, type View, type Person, type Plan, type Goal } from '@/lib/api';
@@ -48,11 +48,16 @@ export default function App() {
   const [txModal, setTxModal] = useState<Transaction | 'new' | null>(null);
   const [acctModal, setAcctModal] = useState<{ type: AccountType; account: Account | null } | null>(null);
 
+  const refreshId = useRef(0);
   const loadAll = useCallback(async () => {
+    const request = ++refreshId.current;
+    setUnlockError('');
     try {
       const month = localDate().slice(0, 7);
       const planRes = await api.getPlans();
+      if (request !== refreshId.current) return;
       const [accRes, txRes, goalRes, settingsRes] = await Promise.all([api.getAccounts(month), api.getTransactions(), api.getGoals(), api.getSettings()]);
+      if (request !== refreshId.current) return;
       setPlans(planRes.plans); setGoals(goalRes.goals); setNames(settingsRes.names);
       setAccounts(accRes.accounts);
       setNetWorthByView(accRes.netWorthByView);
@@ -61,13 +66,16 @@ export default function App() {
       setLocked(false);
       setTransactions(txRes.transactions.sort((a, b) => (a.date < b.date ? 1 : -1)));
     } catch (err) {
+      if (request !== refreshId.current) return;
       if (err instanceof ApiError && err.status === 401) {
         setUnlockError(hasPasscode() ? "That passcode didn't work. Try again." : '');
         setPasscode('');
         setLocked(true);
         return;
       }
-      toast.error('Failed to load: ' + (err as Error).message);
+      const message = 'Failed to load: ' + (err as Error).message;
+      setUnlockError(message);
+      toast.error(message);
     }
   }, []);
 

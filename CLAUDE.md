@@ -20,7 +20,7 @@ Google Sheets is the actual database (via a service account) — there is no oth
 - `npm run local` — Vite + the real function handlers without the Netlify CLI (`dev/local.mjs`, reads `.env`; template in `.env.example`). With `SHEET_ID` set it uses the real Google Sheet; without it, `sheets.js` is swapped for an in-memory store (data resets on restart, passcode `demo`). Logo upload works only when the Cloudinary vars are set.
 - `netlify dev` — runs the React app and Netlify Functions together (needs Netlify CLI + a local `.env` — see Environment below); use this to exercise real app behavior end-to-end
 - `npm run build` — Vite production build
-- `npm test` — runs `test/balances.test.js` directly with `node` (plain `assert`-based, no test framework/runner). To run it: `node test/balances.test.js`
+- `npm test` — runs the assert-based balance, transaction, installment, plan, CSV, schema, and client-refresh checks with Node.
 
 ## Environment variables
 
@@ -35,7 +35,7 @@ Required (in Netlify site config or a local `.env` for `netlify dev`):
 - `lib/sheets.js` — the only place that talks to Google Sheets. Row↔object mapping is column-order-based (`ACCOUNTS_COLS`, `TX_COLS` arrays) — if you add a field, update the relevant COLS array and keep it in sync with the header row logic in `ensureSheetsExist()`. Updates/voids work by re-finding the row by scanning `listAccounts()`/`listTransactions()` and overwriting that row — there's no row-id-to-row-number index.
 - `lib/balances.js` — **pure functions only** (no network/sheet calls), computing every derived balance from raw accounts + transactions. This separation is what makes `test/balances.test.js` possible without mocking Sheets. Key logic:
   - Savings balance = sum of transactions in/out of that account.
-  - Loan balance is the one *stored* (not derived) field — manually set, and auto-decremented when a `transfer` targets a loan account (see `api.js`'s post-append step in `handleTransactions`).
+  - Loan balance is the one *stored* (not derived) field — manually set, and auto-decremented when a `transfer` targets a loan account (see the atomic loan adjustment in `sheets.js`'s `commit()`).
   - Credit card debt splits into `current` (billed as of the last cutoff date, due next) vs `outstanding` (spent since cutoff, not yet billed). Payments reduce `current` first, then spill into `outstanding`. `lastCutoffDate()` clamps to the actual last day of short months (e.g. cutoff day 31 in February).
 
 **Frontend (`src/`)** — React + TypeScript (no router, no state library), UI built from shadcn/ui components (`src/components/ui/`, Tailwind v3, added with `shadcn@2.3.0` — the last CLI release for Tailwind v3):

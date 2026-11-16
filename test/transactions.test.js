@@ -28,7 +28,11 @@ const decodeCell = cell => Object.values(cell.userEnteredValue)[0];
 const fake = { spreadsheets: {
   get: async () => ({ data: { sheets: sheetsMeta } }),
   values: {
-    update: async () => ({}),
+    update: async ({ range, requestBody, valueInputOption }) => {
+      assert.equal(valueInputOption, 'RAW', 'ordinary writes must preserve literal text');
+      const match = /^Accounts!A(\d+):I\d+$/.exec(range);
+      if (match) data.Accounts[Number(match[1]) - 2] = structuredClone(requestBody.values[0]);
+    },
     get: async ({ range }) => ({ data: { values: structuredClone(data[range.split('!')[0]]) } }),
     append: async ({ range, requestBody }) => { data[range.split('!')[0]].push(...structuredClone(requestBody.values)); }
   },
@@ -207,6 +211,45 @@ const edit = (previous, patch = {}) => post({ ...previous, ...patch, action: 'up
   const loanBeforeImport = loan('l1');
   assert.equal((await post({ action: 'import', rows: [{ type: 'transfer', date: today, amount: 25, description: 'Imported payment', from_account_id: 's', to_account_id: 'l1', person: 'p1' }] })).statusCode, 200);
   assert.equal(loan('l1'), loanBeforeImport - 25);
+
+  const beforePayment = structuredClone(data);
+  const ordinaryPayment = { type: 'transfer', date: today, amount: 15, description: 'Atomic payment', from_account_id: 's', to_account_id: 'l2', person: 'p1' };
+  failBatch = true;
+  assert.equal((await post(ordinaryPayment)).statusCode, 500);
+  assert.deepEqual(data, beforePayment, 'failed creates must leave both payment and loan unchanged');
+  failBatch = false;
+  const loanBeforePayment = loan('l2');
+  assert.equal((await post(ordinaryPayment)).statusCode, 200);
+  assert.equal(loan('l2'), loanBeforePayment - 15);
+  const beforeFuture = structuredClone(data);
+  assert.equal((await post({ ...ordinaryPayment, date: next })).statusCode, 400);
+  assert.equal((await edit(await read('income'), { ...ordinaryPayment, date: next })).statusCode, 400);
+  assert.equal((await post({ action: 'import', rows: [{ ...ordinaryPayment, date: next }] })).statusCode, 400);
+  assert.deepEqual(data, beforeFuture, 'future loan payments must not change balances through any entry point');
+
+  for (const patch of [{ id: 'changed' }, { type: 'savings' }, { archived: true }, { name: '' }, { owner: 'invalid' }, { balance: 'oops' }, { balance: 'Infinity' }, { balance: 1.234 }, { balance: true }, { balance: null }, { balance: '' }, { cutoff_day: 10 }]) {
+    const before = structuredClone(data);
+    assert.equal((await resourcePost('accounts', { action: 'update', id: 'l2', patch })).statusCode, 400, JSON.stringify(patch));
+    assert.deepEqual(data, before);
+  }
+  for (const balance of ['Infinity', 'oops', 1.234, true, null, '', 1e20]) assert.equal((await resourcePost('accounts', { type: 'loan', name: 'Invalid', owner: 'p1', balance })).statusCode, 400);
+  assert.equal((await resourcePost('accounts', { action: 'update', id: 'missing', patch: { name: 'Missing' } })).statusCode, 404);
+  assert.equal((await resourcePost('accounts', { action: 'update', id: 'cc', patch: { cutoff_day: 0 } })).statusCode, 400);
+  assert.equal((await resourcePost('accounts', { action: 'update', id: 'l2', patch: { name: '=1+1', balance: '123.45' } })).statusCode, 200);
+  assert.equal(data.Accounts[3].length, 0, 'blank account rows must remain blank');
+  assert.equal(data.Accounts.filter(row => row[0] === 'l2').length, 1);
+  assert.equal(loan('l2'), 123.45);
+  assert.equal(data.Accounts.find(row => row[0] === 'l2')[2], '=1+1');
+  assert.equal((await resourcePost('accounts', { type: 'loan', name: 'New loan', owner: 'p1', balance: '123.45' })).statusCode, 200);
+
+  const archivedRow = await read('archived');
+  const archivedPreview = JSON.parse((await post({ action: 'import_preview', rows: [archivedRow, { ...csvRow, description: 'After archived row' }] })).body).preview;
+  assert.equal(archivedPreview[0].duplicate, true);
+  assert.equal(archivedPreview[0].error, '');
+  const archiveImport = JSON.parse((await post({ action: 'import', rows: [archivedRow, { ...csvRow, description: 'After archived row' }] })).body);
+  assert.equal(archiveImport.imported, 1); assert.equal(archiveImport.skipped, 1);
+  assert.equal((await post({ action: 'import', rows: [{ ...archivedRow, include_duplicate: true }] })).statusCode, 400, 'an archived reference cannot be used to create a new transaction');
+  assert.equal((await post({ action: 'import', rows: [{ ...archivedRow, id: 'unknown' }] })).statusCode, 400);
 
   assert.equal((await resourcePost('settings', { names: { p1: 'Alex', p2: 'Sam' } })).statusCode, 200);
   assert.deepEqual((await get('settings')).names, { p1: 'Alex', p2: 'Sam' });

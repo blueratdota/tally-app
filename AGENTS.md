@@ -4,7 +4,7 @@ This file provides guidance to Codex (claude.ai/code) when working with code in 
 
 ## What this is
 
-Tally is a household money dashboard: credit cards (with cutoff/due dates), loans, multiple savings accounts, and a live net worth view. No authentication — anyone with the site link can use it.
+Tally is a household money dashboard: credit cards (with cutoff/due dates), loans, multiple savings accounts, and a live net worth view. Access requires a shared household passcode (`APP_PASSCODE`); there are no separate user logins.
 
 Architecture:
 ```
@@ -19,12 +19,12 @@ Google Sheets is the actual database (via a service account) — there is no oth
 - `npm run dev` — Vite dev server only (UI only; API calls fail with nothing to answer them)
 - `netlify dev` — runs the React app and Netlify Functions together (needs Netlify CLI + a local `.env` — see Environment below); use this to exercise real app behavior end-to-end
 - `npm run build` — Vite production build
-- `npm test` — runs `test/balances.test.js` directly with `node` (plain `assert`-based, no test framework/runner). To run it: `node test/balances.test.js`
+- `npm test` — runs the assert-based balance, transaction, installment, plan, CSV, schema, and client-refresh checks with Node.
 
 ## Environment variables
 
 Required (in Netlify site config or a local `.env` for `netlify dev`):
-`SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+`APP_PASSCODE`, `SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ Required (in Netlify site config or a local `.env` for `netlify dev`):
 - `lib/sheets.js` — the only place that talks to Google Sheets. Row↔object mapping is column-order-based (`ACCOUNTS_COLS`, `TX_COLS` arrays) — if you add a field, update the relevant COLS array and keep it in sync with the header row logic in `ensureSheetsExist()`. Updates/voids work by re-finding the row by scanning `listAccounts()`/`listTransactions()` and overwriting that row — there's no row-id-to-row-number index.
 - `lib/balances.js` — **pure functions only** (no network/sheet calls), computing every derived balance from raw accounts + transactions. This separation is what makes `test/balances.test.js` possible without mocking Sheets. Key logic:
   - Savings balance = sum of transactions in/out of that account.
-  - Loan balance is the one *stored* (not derived) field — manually set, and auto-decremented when a `transfer` targets a loan account (see `api.js`'s post-append step in `handleTransactions`).
+  - Loan balance is the one *stored* (not derived) field — manually set, and auto-decremented when a `transfer` targets a loan account (see the atomic loan adjustment in `sheets.js`'s `commit()`).
   - Credit card debt splits into `current` (billed as of the last cutoff date, due next) vs `outstanding` (spent since cutoff, not yet billed). Payments reduce `current` first, then spill into `outstanding`. `lastCutoffDate()` clamps to the actual last day of short months (e.g. cutoff day 31 in February).
 
 **Frontend (`src/`)** — plain React (no router, no state library):

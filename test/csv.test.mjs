@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseCSV, stringifyCSV, statementAmount, statementDate } from '../src/lib/csv.mjs';
+import { parseCSV, stringifyCSV, statementAmount, statementDate, statementTransaction } from '../src/lib/csv.mjs';
 assert.deepEqual(parseCSV('\uFEFFdate,note,amount\r\n2026-01-01,"Food, drinks",100\r\n2026-01-02,"A ""quote""\nand newline",200\r\n'), [['date', 'note', 'amount'], ['2026-01-01', 'Food, drinks', '100'], ['2026-01-02', 'A "quote"\nand newline', '200']]);
 assert.deepEqual(parseCSV('date\tamount\n2026-01-01\t100'), [['date', 'amount'], ['2026-01-01', '100']]);
 assert.throws(() => parseCSV('x\n"unclosed'), /unclosed/);
@@ -17,3 +17,14 @@ assert.equal(statementDate('01/31/2026', 'mdy'), '2026-01-31');
 assert.equal(statementDate('2026-01-31 12:01:00', 'iso'), '2026-01-31');
 assert.throws(() => statementDate('02/30/2026', 'mdy'), /Invalid/);
 console.log('All CSV parsing, date, amount, and formula-safety checks passed.');
+
+assert.deepEqual(statementTransaction('-120', '', '', 'debit', 'signed'), { type: 'expense', amount: 120 });
+assert.deepEqual(statementTransaction('-120', '', '', 'credit', 'signed'), { type: 'income', amount: 120 });
+assert.deepEqual(statementTransaction('-120', '', '', 'expense', 'signed'), { type: 'expense', amount: -120 });
+assert.deepEqual(statementTransaction('120', '', '', 'refund', 'signed'), { type: 'expense', amount: -120 });
+assert.deepEqual(statementTransaction('', '0.00', '1000.00', '', 'signed'), { type: 'income', amount: 1000 });
+assert.deepEqual(statementTransaction('', '-120', '0.00', '', 'signed'), { type: 'expense', amount: 120 });
+assert.deepEqual(statementTransaction('-120', '', '', '', 'signed'), { type: 'expense', amount: 120 });
+assert.deepEqual(statementTransaction('-120', '', '', '', 'expense'), { type: 'expense', amount: -120 });
+assert.throws(() => statementTransaction('', '120', '1000', '', 'signed'), /both/);
+assert.throws(() => statementTransaction('120', '', '', 'toString', 'signed'), /Type/);

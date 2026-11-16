@@ -2,7 +2,7 @@ import { useState, type ChangeEvent } from 'react';
 import { api, type Account, type ImportPreview, type ImportRow, type Person } from '@/lib/api';
 import { usePeople } from '@/lib/household';
 import { peso } from '@/lib/format';
-import { parseCSV, statementAmount, statementDate, stringifyCSV } from '@/lib/csv.mjs';
+import { parseCSV, statementTransaction, statementDate, stringifyCSV } from '@/lib/csv.mjs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,25 +42,13 @@ export default function DataImport({ accounts, defaultPerson, onClose, onSaved }
     return data.map((row, index) => {
       try {
         const value = (field: string) => mapping[field] >= 0 ? row[mapping[field]]?.trim() || '' : '';
-        const amountRaw = value('amount'); const debit = value('debit'); const credit = value('credit');
-        let amount = statementAmount(amountRaw || debit || credit);
-        const explicit = value('type').toLowerCase();
-        let type: ImportRow['type'];
-        if (explicit) {
-          const types: Record<string, ImportRow['type']> = { income: 'income', credit: 'income', expense: 'expense', debit: 'expense', refund: 'expense', transfer: 'transfer' };
-          if (!types[explicit]) throw new Error('Type must be income, expense, transfer, or refund');
-          type = types[explicit]; if (explicit === 'refund') amount = -Math.abs(amount);
-        } else if (!amountRaw && (debit || credit)) { type = debit ? 'expense' : 'income'; amount = Math.abs(amount); }
-        else if (kind === 'expense' || kind === 'income') type = kind;
-        else { type = amount < 0 ? 'expense' : 'income'; amount = Math.abs(amount); }
+        const { type, amount } = statementTransaction(value('amount'), value('debit'), value('credit'), value('type').toLowerCase(), kind);
         const who = value('person'); const resolvedPerson = (['p1', 'p2'] as const).find(p => p === who || names[p].toLowerCase() === who.toLowerCase());
         if (who && !resolvedPerson) throw new Error('Person does not match either household name');
         const from = value('from'), to = value('to');
-        if (from && !matchAccount(from)) throw new Error(`Unknown source account: ${from}`);
-        if (to && !matchAccount(to)) throw new Error(`Unknown destination account: ${to}`);
         const tx: ImportRow = { type, amount, date: statementDate(value('date'), format), description: value('description'), person: resolvedPerson || person, category: value('category') || 'Other', id: value('id') || undefined };
-        if (type !== 'income') tx.from_account_id = from ? matchAccount(from) : account;
-        if (type !== 'expense') tx.to_account_id = to ? matchAccount(to) : type === 'income' ? account : '';
+        if (type !== 'income') tx.from_account_id = from ? matchAccount(from) || from : account;
+        if (type !== 'expense') tx.to_account_id = to ? matchAccount(to) || to : type === 'income' ? account : '';
         return tx;
       } catch (err) { throw new Error(`CSV row ${index + 2}: ${(err as Error).message}`); }
     });

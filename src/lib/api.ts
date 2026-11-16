@@ -19,6 +19,8 @@ export interface Account {
   outstanding?: number;
   future?: number;
   dueNextMonth?: number;
+  dueDate?: string | null;
+  daysUntilDue?: number | null;
 }
 
 export interface Transaction {

@@ -73,16 +73,10 @@ async function handleAccounts(event) {
     }
     if (body.action === 'update') {
       if (!body.id) return json(400, { success: false, error: 'Missing id' });
-      if (body.patch?.owner !== undefined && !OWNERS.includes(body.patch.owner)) {
-        return json(400, { success: false, error: 'Owner must be p1, p2 or shared' });
-      }
-      for (const k of ['cutoff_day', 'due_day']) {
-        const v = body.patch?.[k];
-        if (v !== undefined && !(Number.isInteger(Number(v)) && v >= 1 && v <= 31)) {
-          return json(400, { success: false, error: 'Cutoff and due day must be between 1 and 31' });
-        }
-      }
-      const updated = await sheetsDb.updateAccount(body.id, body.patch || {});
+      const account = (await sheetsDb.listAccounts()).find(a => a.id === body.id);
+      if (!account) throw userError('Account not found', 404);
+      const patch = validateAccountFields(body.patch, account.type, true);
+      const updated = await sheetsDb.updateAccount(body.id, patch);
       return json(200, { success: true, account: updated });
     }
 
@@ -94,28 +88,18 @@ async function handleAccounts(event) {
 
     // default action: create
     if (!VALID_TYPES.includes(body.type)) return json(400, { success: false, error: 'Invalid account type' });
-    if (!body.name || !body.name.trim()) return json(400, { success: false, error: 'Name is required' });
-    if (!OWNERS.includes(body.owner)) return json(400, { success: false, error: 'Owner must be p1, p2 or shared' });
-    if (body.type === 'creditcard') {
-      const c = Number(body.cutoff_day), d = Number(body.due_day);
-      if (!(c >= 1 && c <= 31) || !(d >= 1 && d <= 31)) {
-        return json(400, { success: false, error: 'Cutoff and due day must be between 1 and 31' });
-      }
-    }
-    if (body.type === 'loan' && isNaN(Number(body.balance))) {
-      return json(400, { success: false, error: 'Loan balance must be a number' });
-    }
-
+    const { type: accountType, action: accountAction, ...fields } = body;
+    const validated = validateAccountFields(fields, accountType);
     const account = {
       id: crypto.randomUUID(),
       type: body.type,
-      name: body.name.trim(),
-      balance: body.type === 'loan' ? Number(body.balance) : '',
-      cutoff_day: body.type === 'creditcard' ? Number(body.cutoff_day) : '',
-      due_day: body.type === 'creditcard' ? Number(body.due_day) : '',
-      logo_url: body.logo_url || '',
+      name: validated.name,
+      balance: validated.balance ?? '',
+      cutoff_day: validated.cutoff_day ?? '',
+      due_day: validated.due_day ?? '',
+      logo_url: validated.logo_url || '',
       archived: false,
-      owner: body.owner
+      owner: validated.owner
     };
     await sheetsDb.appendAccount(account);
     return json(200, { success: true, account });
@@ -191,16 +175,7 @@ async function handleTransactions(event) {
       await sheetsDb.commit({ transactions, records: [{ table: 'Plans', record: plan }] });
       return json(200, { success: true, plan, transactions });
     }
-    await sheetsDb.appendTransaction(tx);
-
-    // A transfer INTO a loan is a payment — auto-reduce that loan's stored balance.
-    if (type === 'transfer') {
-      const destination = accounts.find(a => a.id === body.to_account_id);
-      if (destination && destination.type === 'loan') {
-        const newBalance = Number(destination.balance) - numAmount;
-        await sheetsDb.updateAccount(destination.id, { balance: newBalance });
-      }
-    }
+    await sheetsDb.commit({ transactions: [tx] });
 
     return json(200, { success: true, transaction: tx });
   }
@@ -218,6 +193,32 @@ function money(value, allowZero = false) {
   const n = Number(value), cents = Math.round(n * 100);
   if (!['number', 'string'].includes(typeof value) || !Number.isFinite(n) || !Number.isSafeInteger(cents) || cents < (allowZero ? 0 : 1) || Math.abs(n * 100 - cents) > 0.000001) throw userError('Enter a valid amount with up to two decimal places');
   return cents / 100;
+}
+function validateAccountFields(fields, type, partial = false) {
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) throw userError('Enter account fields');
+  const allowed = ['name', 'owner', ...(type === 'loan' ? ['balance'] : type === 'creditcard' ? ['cutoff_day', 'due_day', 'logo_url'] : [])];
+  if (Object.keys(fields).some(k => !allowed.includes(k))) throw userError('Account contains fields that cannot be edited');
+  const result = {};
+  for (const key of allowed) {
+    const value = fields[key];
+    if (value === undefined && (partial || key === 'logo_url')) continue;
+    if (key === 'name') {
+      if (typeof value !== 'string' || !value.trim()) throw userError('Name is required');
+      result[key] = value.trim();
+    } else if (key === 'owner') {
+      if (!OWNERS.includes(value)) throw userError('Owner must be p1, p2 or shared');
+      result[key] = value;
+    } else if (key === 'logo_url') {
+      if (typeof value !== 'string') throw userError('Logo URL must be text');
+      result[key] = value;
+    } else {
+      const n = Number(value), cents = Math.round(n * 100);
+      if (!['number', 'string'].includes(typeof value) || String(value).trim() === '' || !Number.isFinite(n)) throw userError('Enter a valid account number');
+      if (key === 'balance' ? !Number.isSafeInteger(cents) || Math.abs(n * 100 - cents) > 0.000001 : !Number.isInteger(n) || n < 1 || n > 31) throw userError(key === 'balance' ? 'Enter a balance with up to two decimal places' : 'Cutoff and due day must be between 1 and 31');
+      result[key] = key === 'balance' ? cents / 100 : n;
+    }
+  }
+  return result;
 }
 function validateTransaction(body, accounts, original) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw userError('Each row must contain a transaction');
@@ -243,6 +244,7 @@ function validateTransaction(body, accounts, original) {
     if (type === 'transfer' && (!validAccount('from_account_id', ['savings']) || !validAccount('to_account_id', VALID_TYPES) || body.from_account_id === body.to_account_id)) {
       throw userError('Transfer needs different valid source and destination accounts');
     }
+    if (type === 'transfer' && date > todayISO() && accounts.some(a => a.id === body.to_account_id && a.type === 'loan')) throw userError('Loan payments cannot be dated in the future');
 
     return {
       id: crypto.randomUUID(),
@@ -359,6 +361,8 @@ async function handleImport(body) {
   const ids = new Set(existing.map(t => t.id));
   const preview = body.rows.map((row, index) => {
     try {
+      const matched = existing.find(t => t.id === row?.id);
+      if (matched && row.include_duplicate !== true) return { index, transaction: matched, duplicate: true, error: '' };
       const tx = validateTransaction(row, accounts);
       const key = transactionKey(tx);
       const duplicate = (row.id && ids.has(row.id)) || keys.has(key);
